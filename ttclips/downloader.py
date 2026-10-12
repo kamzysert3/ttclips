@@ -6,8 +6,8 @@ import re
 import shutil
 from pathlib import Path
 
-from src.binutils import ffmpeg_dir
-from src.config import DOWNLOADS_DIR
+from ttclips.binutils import ffmpeg_dir
+from ttclips.config import DOWNLOADS_DIR
 
 log = logging.getLogger(__name__)
 

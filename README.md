@@ -39,6 +39,58 @@ YouTube RSS feeds ─────────▶ monitor.py (queue of new videos
 | 20:00 | generated |
 | 22:00 | repost |
 
+## Install as a pip package
+
+```powershell
+pip install .            # from a source checkout
+ttclips --init           # scaffold config/ + .env.example into the current dir
+```
+
+Once published: `pip install ttclips`. The `ttclips` command resolves
+`config/` + `data/` from the **current working directory**, or from
+`$TTCLIPS_HOME` when that variable is set — so an installed CLI can run from
+any empty folder:
+
+```powershell
+mkdir D:\ttclips && cd D:\ttclips
+ttclips --init
+# edit .env (GEMINI_API_KEY), then:
+ttclips --monitor
+```
+
+Running from a source checkout keeps working unchanged simply by cd-ing to the
+repo root. Related console commands: `ttclips-gemini --probe` and
+`ttclips-upload` (the internal upload child process).
+
+## Releasing to PyPI (auto via GitHub Actions)
+
+Pushing a tag `vX.Y.Z` automatically builds the wheel + sdist, runs
+`twine check`, and publishes to PyPI (`.github/workflows/publish.yml`). A
+separate validation workflow (`.github/workflows/ci.yml`) builds + checks the
+package on every push to `main` and every PR — no secrets needed.
+
+Release flow:
+
+1. Bump the version in **both** `pyproject.toml` and `ttclips/__init__.py`
+   (the release workflow refuses to publish a mismatch).
+2. Tag and push:
+
+   ```powershell
+   git add . ; git commit -m "Release v0.1.0"
+   git tag v0.1.0
+   git push origin main --tags
+   ```
+
+3. Watch "Publish to PyPI" on GitHub → Actions. Once green, `pip install ttclips` works.
+
+**First-time publisher setup (trusted publishing — no API token needed):**
+
+- PyPI → [Account settings → Publishing](https://pypi.org/manage/account/publishing/)
+  → **Add a pending publisher** with:
+  - Owner: `kamzysert3` · Repository: `ttclips` · Workflow name: **`publish.yml`**
+- The workflow filename must match **exactly** — it's part of the OIDC claim.
+- The first successful run creates the `ttclips` project on PyPI automatically.
+
 ## Setup (Windows)
 
 1. **Python 3.10+** — verify with `python --version`.
@@ -58,13 +110,13 @@ YouTube RSS feeds ─────────▶ monitor.py (queue of new videos
 ## Verify
 
 ```powershell
-.\.venv\Scripts\python.exe -m src.scheduler --validate-session   # cookies OK?
-.\.venv\Scripts\python.exe -m src.scheduler --monitor            # build watch queue
-.\.venv\Scripts\python.exe -m src.scheduler --once --dry-run     # full pipeline, no upload
-.\.venv\Scripts\python.exe -m src.scheduler --once --slot 12:00  # post one slot now
-.\.venv\Scripts\python.exe -m src.scheduler --once --slot 12:00 --no-upload  # render only
-.\.venv\Scripts\python.exe -m src.scheduler --post-file "data\clips\video.mp4"   # post an already-generated clip
-.\.venv\Scripts\python.exe -m src.gemini  --probe                # ping Gemini model status
+ttclips --validate-session                 # cookies OK?
+ttclips --monitor                          # build watch queue
+ttclips --once --dry-run                   # full pipeline, no upload
+ttclips --once --slot 12:00                # post one slot now
+ttclips --once --slot 12:00 --no-upload    # render only
+ttclips --post-file "data\clips\video.mp4" # post an already-generated clip
+ttclips-gemini --probe                     # ping Gemini model status
 ```
 
 Closing flags: `--dry-run` = skip upload, `--no-upload` = render but don't post.
@@ -82,7 +134,8 @@ entry in `data/posted.json`.
 
 The scheduler posts exactly once per slot per day; run `--catchup` after the
 machine was off for a while to fill missed slots for today. `scripts/catchup.ps1`
-wraps it.
+wraps it. When registering a task, set its *Start in* folder to your ttclips
+project dir (or define `TTCLIPS_HOME`) so `config/` and `data/` resolve.
 
 ## Configuration
 

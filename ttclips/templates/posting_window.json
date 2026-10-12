@@ -1,0 +1,12 @@
+{
+  "slots": [
+    { "time": "08:00", "type": "repost",    "hint": "" },
+    { "time": "10:00", "type": "repost",    "hint": "" },
+    { "time": "12:00", "type": "generated", "hint": "wildest gaming lore deep-dive" },
+    { "time": "14:00", "type": "repost",    "hint": "" },
+    { "time": "16:00", "type": "generated", "hint": "brainrot and meme culture, explained" },
+    { "time": "18:00", "type": "repost",    "hint": "" },
+    { "time": "20:00", "type": "generated", "hint": "true-crime style drama recap" },
+    { "time": "22:00", "type": "repost",    "hint": "" }
+  ]
+}

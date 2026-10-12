@@ -1,11 +1,12 @@
 """Main orchestrator / CLI entry-point for ttclips.
 
 Usage:
-    python -m src.scheduler             # post the current-time slot (if not yet posted today)
-    python -m src.scheduler --monitor   # refresh YouTube feeds only
-    python -m src.scheduler --catchup   # find missed slots and post them
-    python -m src.scheduler --once --slot 12:00 --type generated
-    python -m src.scheduler --dry-run   # same as normal but skip upload
+    ttclips                             # post the current-time slot (if not yet posted today)
+    ttclips --monitor                   # refresh YouTube feeds only
+    ttclips --catchup                   # find missed slots and post them
+    ttclips --once --slot 12:00 --type generated
+    ttclips --dry-run                   # same as normal but skip upload
+    ttclips --init                      # scaffold config/ + .env.example in $TTCLIPS_HOME
 """
 from __future__ import annotations
 
@@ -17,27 +18,21 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# ensure project root is on sys.path so `python -m src.scheduler` works
-# from the ttclips directory
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-from src.config import CLIPS_DIR, load_posting_window, load_tiktok_config
-from src.broll import pick_background
-from src.clipper import transcribe, rank_highlights
-from src.downloader import download
-from src.encoder import cut_and_crop_clip, make_generated_clip
-from src.generator import generate_original
-from src.monitor import refresh_feeds
-from src.state import (PostRecord, add_post, load_posts, load_queue,
-                       remove_from_queue, slot_posted_today)
-from src.uploader import upload_clip, validate_session
+from ttclips import __version__
+from ttclips.config import CLIPS_DIR, LOG_FILE, load_posting_window, load_tiktok_config
+from ttclips.broll import pick_background
+from ttclips.clipper import transcribe, rank_highlights
+from ttclips.downloader import download
+from ttclips.encoder import cut_and_crop_clip, make_generated_clip
+from ttclips.generator import generate_original
+from ttclips.monitor import refresh_feeds
+from ttclips.scaffold import init_home
+from ttclips.state import (PostRecord, add_post, load_posts, load_queue,
+                           remove_from_queue, slot_posted_today)
+from ttclips.uploader import upload_clip, validate_session
 
 # ---------------------------------------------------------------------------
 # Logging
-LOG_FILE = PROJECT_ROOT / "data" / "logs" / "ttclips.log"
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
@@ -372,7 +367,10 @@ def _human_delay():
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="ttclips — clip reposter for TikTok")
+    parser = argparse.ArgumentParser(prog="ttclips", description="ttclips — clip reposter for TikTok")
+    parser.add_argument("--init", action="store_true",
+                        help="Create config/ and .env.example in the ttclips home dir, then exit")
+    parser.add_argument("--version", action="version", version=f"ttclips {__version__}")
     parser.add_argument("--monitor", action="store_true", help="Refresh YouTube feed queue only")
     parser.add_argument("--catchup", action="store_true", help="Post all missed slots for today")
     parser.add_argument("--once",    action="store_true", help="Post the current/upcoming slot then exit")
@@ -387,6 +385,13 @@ def main() -> None:
                         help="Caption override for --post-file (defaults to a title derived from the filename)")
     parser.add_argument("--validate-session", action="store_true", help="Check if TikTok cookie session is alive")
     args = parser.parse_args()
+
+    if args.init:
+        created = init_home()
+        for path in created:
+            log.info("Created %s", path)
+        log.info("Initialized ttclips home — edit .env, then run `ttclips --monitor`.")
+        sys.exit(0)
 
     if args.validate_session:
         valid = validate_session()

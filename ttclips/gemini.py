@@ -1,7 +1,7 @@
 """Shared Gemini helpers: retry with backoff + model fallback chain + probe CLI.
 
 Usage:
-    python -m src.gemini --probe [model...]
+    python -m ttclips.gemini --probe [model...]
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import sys
 import threading
 import time
 
-from src.config import load_env
+from ttclips.config import load_env
 
 log = logging.getLogger(__name__)
 ENV = load_env()

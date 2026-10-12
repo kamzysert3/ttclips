@@ -13,7 +13,7 @@ import shutil
 from functools import lru_cache
 from pathlib import Path
 
-from src.config import load_env
+from ttclips.config import load_env
 
 log = logging.getLogger(__name__)
 

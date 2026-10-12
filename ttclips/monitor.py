@@ -5,8 +5,8 @@ import logging
 import urllib.request
 import xml.etree.ElementTree as ET
 
-from src.config import load_channels
-from src.state import QueueItem, add_to_queue, load_queue, queue_has, video_posted
+from ttclips.config import load_channels
+from ttclips.state import QueueItem, add_to_queue, load_queue, queue_has, video_posted
 
 log = logging.getLogger(__name__)
 

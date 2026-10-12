@@ -7,9 +7,9 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from src.config import DOWNLOADS_DIR, load_env
-from src.encoder import probe_duration
-from src.gemini import call_with_model_retry, resolve_models
+from ttclips.config import DOWNLOADS_DIR, load_env
+from ttclips.encoder import probe_duration
+from ttclips.gemini import call_with_model_retry, resolve_models
 
 log = logging.getLogger(__name__)
 ENV = load_env()

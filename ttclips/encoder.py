@@ -5,9 +5,9 @@ import logging
 import subprocess
 from pathlib import Path
 
-from src.binutils import ffmpeg_bin, ffprobe_bin
-from src.clipper import transcribe
-from src.config import load_env
+from ttclips.binutils import ffmpeg_bin, ffprobe_bin
+from ttclips.clipper import transcribe
+from ttclips.config import load_env
 
 log = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ HIGHLIGHT_COLOUR = _ENV.get("HIGHLIGHT_COLOUR", "0000FFFF")  # ASS BGR: yellow
 IDLE_COLOUR = _ENV.get("IDLE_COLOUR", "00808080")  # ASS BGR: light grey
 
 # ---------------------------------------------------------------------------
-# Binary resolution (moved to src.binutils): env override -> winget Gyan build
+# Binary resolution (moved to ttclips.binutils): env override -> winget Gyan build
 # -> PATH. Missing binaries fail loudly with a clear message.
 def _ffmpeg() -> str:
     path = ffmpeg_bin()

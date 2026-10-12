@@ -8,3 +8,6 @@ data/logs/
 data/cookies.txt
 data/posted.json
 .env
+dist/
+build/
+*.egg-info/

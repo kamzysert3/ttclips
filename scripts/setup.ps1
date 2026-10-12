@@ -13,9 +13,9 @@ if (-not (Test-Path "$venv\Scripts\python.exe")) {
 $py = "$venv\Scripts\python.exe"
 $pip = "$venv\Scripts\pip.exe"
 
-Write-Host "Installing Python dependencies..." -ForegroundColor Yellow
+Write-Host "Installing (editable) package + Python dependencies..." -ForegroundColor Yellow
 & $pip install --upgrade pip
-& $pip install -r requirements.txt
+& $pip install -e .
 
 Write-Host "Installing Playwright browser (chromium)..." -ForegroundColor Yellow
 & $py -m playwright install chromium
@@ -53,7 +53,7 @@ Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Cyan
 Write-Host "  1. Edit .env  -> set GEMINI_API_KEY, tweak WHISPER_MODEL / TTS_VOICE"
 Write-Host "  2. Log into TikTok in Chrome, export cookies to data/cookies.txt (Get cookies.txt LOCALLY extension)"
-Write-Host "  3. Test:        .\.venv\Scripts\python.exe -m src.scheduler --validate-session"
-Write-Host "  4. Dry run:     .\.venv\Scripts\python.exe -m src.scheduler --monitor"
-Write-Host "  5. First post:  .\.venv\Scripts\python.exe -m src.scheduler --once --slot 12:00 --dry-run"
+Write-Host "  3. Test:        .\.venv\Scripts\python.exe -m ttclips --validate-session"
+Write-Host "  4. Dry run:     .\.venv\Scripts\python.exe -m ttclips --monitor"
+Write-Host "  5. First post:  .\.venv\Scripts\python.exe -m ttclips --once --slot 12:00 --dry-run"
 Write-Host "  6. Schedule in Task Scheduler (see README)."

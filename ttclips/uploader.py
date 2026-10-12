@@ -1,6 +1,6 @@
 """TikTok uploader: Playwright browser automation with cookie-based auth.
 
-Uploads run in a child subprocess (``python -m src.uploader <video>``) so a
+Uploads run in a child subprocess (``python -m ttclips.uploader <video>``) so a
 Playwright/thread crash inside one attempt can never poison the scheduler
 process — tiktok_uploader never stops its internal sync_playwright loop, and
 a second in-process call after a failure raises the "Sync API inside the
@@ -19,7 +19,7 @@ import sys
 import time
 from pathlib import Path
 
-from src.config import CLIPS_DIR, COOKIES_FILE, load_env, load_tiktok_config
+from ttclips.config import CLIPS_DIR, COOKIES_FILE, PROBE_DIR, load_env, load_tiktok_config
 
 log = logging.getLogger(__name__)
 TK_CFG = load_tiktok_config()
@@ -41,7 +41,6 @@ RETRY_WAIT_MAX = float(TK_CFG.get("retry_wait_max_sec", 300))
 # ---------------------------------------------------------------------------
 # Probe scaffolding: reach the upload form, type a hashtag, dump the DOM so we
 # can find TikTok's real suggestion-popover markup. Never posts.
-PROBE_DIR = Path(__file__).resolve().parent.parent / "data" / "probe"
 
 _PROBE_JS = """() => {
   const cap = document.querySelector('[contenteditable="true"]');
@@ -349,7 +348,7 @@ def _upload_once(video_path: str, caption: str, cookies_file: str = "") -> bool:
 def _run_upload_child(video_path: str, caption: str, cookies: str) -> bool:
     """Spawn a fresh python process that performs one upload."""
     payload = json.dumps({"caption": caption, "cookies": cookies})
-    cmd = [sys.executable, "-m", "src.uploader", str(video_path), "--input-json"]
+    cmd = [sys.executable, "-m", "ttclips.uploader", str(video_path), "--input-json"]
     extra: dict = {}
     if os.name == "nt":
         extra["creationflags"] = subprocess.CREATE_NO_WINDOW

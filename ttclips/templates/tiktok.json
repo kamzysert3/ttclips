@@ -1,0 +1,16 @@
+{
+  "_comment": "TikTok browser-automation posting settings. Cookies come from exporting your logged-in browser session (Netscape format) to data/cookies.txt - see scripts/setup.ps1 step 6. headless: TikTok's bot detection is stricter; keep false for reliable posting. upload_timeout_sec: seconds allowed for page loads during upload (homepage/auth + upload page); raise it if the heavy TikTok pages load slowly. user_agent: keep this a recent desktop Chrome UA - the library default (Chrome 58) gets connection-reset by TikTok's WAF. retry_wait_*: exponential backoff applied between upload attempts after each failure.",
+  "browser": "chrome",
+  "headless": false,
+  "min_action_delay_sec": 6,
+  "max_action_delay_sec": 22,
+  "retries": 2,
+  "upload_timeout_sec": 180,
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+  "retry_wait_initial_sec": 30,
+  "retry_wait_backoff": 2.0,
+  "retry_wait_max_sec": 300,
+  "visibility": "everyone",
+  "default_hashtags": "#fyp #viral #funny #trending",
+  "caption_template": "{title}\n\n{hashtags}"
+}

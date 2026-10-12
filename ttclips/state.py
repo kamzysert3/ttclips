@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from src.config import QUEUE_FILE, STATE_FILE
+from ttclips.config import QUEUE_FILE, STATE_FILE
 
 _lock = threading.Lock()
 

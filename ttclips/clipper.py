@@ -5,8 +5,8 @@ import json
 import logging
 from pathlib import Path
 
-from src.config import load_env
-from src.gemini import call_with_model_retry, resolve_models
+from ttclips.config import load_env
+from ttclips.gemini import call_with_model_retry, resolve_models
 
 log = logging.getLogger(__name__)
 ENV = load_env()

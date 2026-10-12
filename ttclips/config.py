@@ -1,18 +1,40 @@
-"""Shared paths + config loading for ttclips."""
+"""Shared paths + config loading for ttclips.
+
+Everything is resolved from a single *home* directory:
+
+    $TTCLIPS_HOME  ->  current working directory
+
+This lets an installed CLI run against any project folder (``ttclips init``)
+while a source checkout keeps working unchanged when the process CWD is the
+repo root (``config/`` and ``data/`` live there).
+"""
 from __future__ import annotations
 
 import json
 import os
 import re
-import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-CONFIG_DIR = ROOT / "config"
-DATA_DIR = ROOT / "data"
+
+def resolve_home() -> Path:
+    """Return the ttclips home dir ($TTCLIPS_HOME or the current directory)."""
+    raw = os.environ.get("TTCLIPS_HOME") or os.getcwd()
+    home = Path(raw).expanduser()
+    try:
+        home = home.resolve()
+    except OSError:  # pragma: no cover - unusual filesystem edge case
+        pass
+    return home
+
+
+HOME = resolve_home()
+CONFIG_DIR = HOME / "config"
+DATA_DIR = HOME / "data"
 DOWNLOADS_DIR = DATA_DIR / "downloads"
 CLIPS_DIR = DATA_DIR / "clips"
 LOGS_DIR = DATA_DIR / "logs"
+BROLL_DIR = DATA_DIR / "broll"
+PROBE_DIR = DATA_DIR / "probe"
 STATE_FILE = DATA_DIR / "posted.json"
 QUEUE_FILE = DATA_DIR / "queue.json"
 COOKIES_FILE = DATA_DIR / "cookies.txt"
@@ -43,7 +65,7 @@ def load_tiktok_config() -> dict:
 
 def load_env() -> dict:
     """Minimal key=value dotenv loader (no external dep needed)."""
-    env_file = ROOT / ".env"
+    env_file = HOME / ".env"
     if not env_file.exists():
         return {}
     out = {}

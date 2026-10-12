@@ -6,8 +6,8 @@ from pathlib import Path
 
 import httpx
 
-from src.config import DATA_DIR, load_env
-from src.encoder import probe_duration
+from ttclips.config import DATA_DIR, load_env
+from ttclips.encoder import probe_duration
 
 log = logging.getLogger(__name__)
 
