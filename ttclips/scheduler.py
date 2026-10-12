@@ -6,7 +6,7 @@ Usage:
     ttclips --catchup                   # find missed slots and post them
     ttclips --once --slot 12:00 --type generated
     ttclips --dry-run                   # same as normal but skip upload
-    ttclips --init                      # scaffold config/ + .env.example in $TTCLIPS_HOME
+    ttclips --init --yes                # scaffold config/ + .env.example in $TTCLIPS_HOME
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from ttclips.downloader import download
 from ttclips.encoder import cut_and_crop_clip, make_generated_clip
 from ttclips.generator import generate_original
 from ttclips.monitor import refresh_feeds
-from ttclips.scaffold import init_home
+from ttclips.scaffold import init_home, require_ownership_ack
 from ttclips.state import (PostRecord, add_post, load_posts, load_queue,
                            remove_from_queue, slot_posted_today)
 from ttclips.uploader import upload_clip, validate_session
@@ -370,6 +370,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="ttclips", description="ttclips — clip reposter for TikTok")
     parser.add_argument("--init", action="store_true",
                         help="Create config/ and .env.example in the ttclips home dir, then exit")
+    parser.add_argument("--yes", action="store_true",
+                        help="Acknowledge you own (or have rights to) the content you will repost "
+                             "(required for --init)")
     parser.add_argument("--version", action="version", version=f"ttclips {__version__}")
     parser.add_argument("--monitor", action="store_true", help="Refresh YouTube feed queue only")
     parser.add_argument("--catchup", action="store_true", help="Post all missed slots for today")
@@ -387,6 +390,8 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.init:
+        if not require_ownership_ack(args.yes):
+            sys.exit(1)
         created = init_home()
         for path in created:
             log.info("Created %s", path)

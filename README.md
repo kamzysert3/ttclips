@@ -2,14 +2,18 @@
 
 [![PyPI - Version](https://img.shields.io/pypi/v/ttclips.svg?logo=pypi&logoColor=white)](https://pypi.org/project/ttclips/)
 [![PyPI - Python Versions](https://img.shields.io/pypi/pyversions/ttclips.svg?logo=python&logoColor=white)](https://pypi.org/project/ttclips/)
-[![PyPI - Downloads](https://img.shields.io/pypi/dm/ttclips.svg)](https://pypi.org/project/ttclips/)
 [![CI](https://img.shields.io/github/actions/workflow/status/kamzysert3/ttclips/ci.yml.svg?branch=main&logo=github)](https://github.com/kamzysert3/ttclips/actions?query=workflow%3ACI)
 [![License](https://img.shields.io/github/license/kamzysert3/ttclips.svg)](https://github.com/kamzysert3/ttclips/blob/main/LICENSE)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-F0643F.svg?logo=github)](https://github.com/sponsors/kamzysert3)
 
-An automated, fully-local clip reposter for TikTok. It monitors YouTube
-channels, detects highlight moments, cuts them into vertical 9:16 clips with
-dead-center, word-synced karaoke captions, and posts them to TikTok on a
-schedule — without any TikTok API approval.
+Turn **your own YouTube channel** into TikTok content automatically. ttclips
+monitors your channel(s), detects the highlight moments, cuts them into vertical
+9:16 clips with dead-center, word-synced karaoke captions, and posts them to
+TikTok on a schedule — no TikTok API approval, no manual editing, fully local.
+
+Point it at channels you own or have rights to: this is a repurposing tool for
+creators, not a content scraper (see
+[Legal & operational notes](#legal--operational-notes)).
 
 - **Fully local and free** — no clip-hosting service, no paid APIs required.
 - **AI-ranked highlights** — whisper transcription + Gemini highlight ranking.
@@ -38,6 +42,7 @@ schedule — without any TikTok API approval.
 - [Development](#development)
 - [Releasing](#releasing)
 - [Legal & operational notes](#legal--operational-notes)
+- [Support the project](#support-the-project)
 - [License](#license)
 
 ---
@@ -106,11 +111,13 @@ same installation can run multiple independent projects.
 
 ```bash
 mkdir my-clips && cd my-clips
-ttclips --init
+ttclips --init --yes
 ```
 
 This creates `config/` (default channels, posting window, TikTok settings) and
-`.env.example`.
+`.env.example`. The `--yes` flag acknowledges that you own (or have rights to)
+the channels you will repost — see
+[`docs/LEGAL.md`](https://github.com/kamzysert3/ttclips/blob/main/docs/LEGAL.md).
 
 ### 2. Configure secrets
 
@@ -188,7 +195,7 @@ Default posting schedule (`config/posting_window.json`):
 | Command | Description |
 |---------|-------------|
 | `ttclips` | Post the current/upcoming slot (if not already posted today) |
-| `ttclips --init` | Scaffold `config/` + `.env.example` into the project folder |
+| `ttclips --init --yes` | Scaffold `config/` + `.env.example` into the project folder; `--yes` acknowledges you own the content you will repost |
 | `ttclips --monitor` | Refresh the YouTube watch queue only |
 | `ttclips --validate-session` | Check whether the TikTok cookie session is alive |
 | `ttclips --once` | Post the current/upcoming slot, then exit |
@@ -201,7 +208,7 @@ Default posting schedule (`config/posting_window.json`):
 | `ttclips --post-file <path> --caption "..."` | ...with a custom caption |
 | `ttclips --version` | Print the installed version |
 | `ttclips-gemini --probe` | Ping candidate Gemini models and report status |
-| `ttclips-init --home <dir> [--force]` | Scaffold config into a specific directory |
+| `ttclips-init --home <dir> --yes [--force]` | Scaffold config into a specific directory |
 
 Posting flags compose: `--dry-run` skips the upload, `--no-upload` renders the
 clip but doesn't post, and `--post-file` uploads an existing clip directly
@@ -368,8 +375,8 @@ Pushing a version tag builds the distributions and publishes them to PyPI
 automatically (GitHub Actions):
 
 ```bash
-git add . && git commit -m "Release v1.0.1"
-git tag v1.0.1
+git add . && git commit -m "Release v1.0.2"
+git tag v1.0.2
 git push origin main --tags
 ```
 
@@ -379,16 +386,25 @@ The release pipeline verifies the tag matches the version in both
 
 ## Legal & operational notes
 
-- **Copyright:** Only repost content you have rights to. Clipping public
-  channels without permission can violate YouTube ToS and creators' rights.
-  Prefer channels that allow embedding/repurposing, or use the generated
-  pipeline.
+- **Own your content:** ttclips is a repurposing tool — configure only channels
+  you own or have rights to repost. `ttclips --init --yes` records that
+  acknowledgement. Clipping channels without permission can violate YouTube ToS
+  and creators' rights; see
+  [`docs/LEGAL.md`](https://github.com/kamzysert3/ttclips/blob/main/docs/LEGAL.md).
 - **TikTok ToS:** browser automation to post content is personal-use and
   may not be permitted for commercial accounts — verify your own risk.
 - **UI changes:** TikTok's uploader selectors can change; pin dependency
   versions and re-export cookies regularly.
 - **Free-tier limits:** the Gemini free tier handles dozens of calls/day —
   comfortable for a few daily clips.
+
+## Support the project
+
+If ttclips saves you time, consider sponsoring its development:
+
+❤️ **[Sponsor ttclips on GitHub](https://github.com/sponsors/kamzysert3)**
+
+Sponsorships fund maintenance, new features, and documentation.
 
 ## License
 
