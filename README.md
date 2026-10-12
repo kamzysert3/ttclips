@@ -1,204 +1,396 @@
-# ttclips — clip reposter for TikTok
+# ttclips
 
-Fully local, free pipeline: monitors YouTube channels, detects highlights (whisper
-+ Gemini), crops clips to vertical 9:16 with **dead-center, word-synced highlight
-captions**, and posts to TikTok through Playwright browser automation (cookie auth,
-no API approval needed).
+[![PyPI - Version](https://img.shields.io/pypi/v/ttclips.svg?logo=pypi&logoColor=white)](https://pypi.org/project/ttclips/)
+[![PyPI - Python Versions](https://img.shields.io/pypi/pyversions/ttclips.svg?logo=python&logoColor=white)](https://pypi.org/project/ttclips/)
+[![PyPI - Downloads](https://img.shields.io/pypi/dm/ttclips.svg)](https://pypi.org/project/ttclips/)
+[![CI](https://img.shields.io/github/actions/workflow/status/kamzysert3/ttclips/ci.yml.svg?branch=main&logo=github)](https://github.com/kamzysert3/ttclips/actions?query=workflow%3ACI)
+[![License](https://img.shields.io/github/license/kamzysert3/ttclips.svg)](https://github.com/kamzysert3/ttclips/blob/main/LICENSE)
+
+An automated, fully-local clip reposter for TikTok. It monitors YouTube
+channels, detects highlight moments, cuts them into vertical 9:16 clips with
+dead-center, word-synced karaoke captions, and posts them to TikTok on a
+schedule — without any TikTok API approval.
+
+- **Fully local and free** — no clip-hosting service, no paid APIs required.
+- **AI-ranked highlights** — whisper transcription + Gemini highlight ranking.
+- **Word-synced captions** — the active word is bold/highlighted in real time.
+- **Cookie-based auth** — no TikTok developer approval / API key needed.
+- **Self-healing** — model fallback chains, cached downloads, graceful b-roll fallback.
+
+---
+
+## Table of contents
+
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Quickstart](#quickstart)
+- [How it works](#how-it-works)
+- [Command-line reference](#command-line-reference)
+- [Configuration](#configuration)
+  - [Target channels (`config/channels.json`)](#target-channels)
+  - [Posting window (`config/posting_window.json`)](#posting-window)
+  - [TikTok upload settings (`config/tiktok.json`)](#tiktok-upload-settings)
+  - [Environment variables (`.env`)](#environment-variables)
+- [State and data](#state-and-data)
+- [Automation (Windows Task Scheduler)](#automation)
+- [Frequently asked questions](#faq)
+- [Development](#development)
+- [Releasing](#releasing)
+- [Legal & operational notes](#legal--operational-notes)
+- [License](#license)
+
+---
+
+## Features
+
+- **YouTube monitoring** — polls channel RSS feeds and queues new videos that
+  match your keyword filters.
+- **Highlight detection** — `faster-whisper` transcribes the audio; Gemini
+  ranks the strongest 20–70 second moments with hooks, captions and hashtags.
+- **Vertical clip production** — FFmpeg crops to 1080×1920 (9:16) and burns in
+  big, centered, word-synced captions that highlight each spoken word as it
+  happens.
+- **Original content mode** — Gemini writes a script, `edge-tts` narrates it,
+  stock b-roll (Pexels) or an animated gradient backs the clip.
+- **Scheduled posting** — up to 8 posts/day at configurable times, with
+  catch-up for missed slots.
+- **Resilient uploads** — Playwright-driven TikTok uploads with human-like
+  delays, exponential backoff retries, and an isolated subprocess so a crashed
+  upload can never take the scheduler down.
+- **Reusable state** — never re-downloads a video or reposts the same moment.
+
+## Requirements
+
+- **Python 3.10+**
+- **ffmpeg + ffprobe** (required to merge streams and render clips):
+  - Windows: `winget install Gyan.FFmpeg`
+  - macOS: `brew install ffmpeg`
+  - Debian/Ubuntu: `sudo apt install ffmpeg`
+  - Alternative: set ``FFMPEG_BIN`` / ``FFPROBE_BIN`` in `.env` to point at
+    your own binaries.
+- **Playwright Chromium** — installed once, see [Installation](#installation).
+- **A Gemini API key** — free at <https://aistudio.google.com/apikey>.
+- **TikTok cookies** (only needed for the upload step) — see
+  [Quickstart](#quickstart).
+
+## Installation
+
+```bash
+pip install ttclips
+```
+
+Then install the Playwright browser (one-time):
+
+```bash
+playwright install chromium
+```
+
+> On Windows, `pip install` puts the `ttclips` command in
+> `%LOCALAPPDATA%\Programs\Python\Python312\Scripts` (add it to `PATH` if the
+> command isn't found).
+
+### Where config and data live
+
+`ttclips` resolves its working directory as follows:
+
+1. `$TTCLIPS_HOME` if set, otherwise
+2. the current working directory.
+
+All `config/`, `data/` and `.env` paths are relative to that directory, so the
+same installation can run multiple independent projects.
+
+## Quickstart
+
+### 1. Initialise a project folder
+
+```bash
+mkdir my-clips && cd my-clips
+ttclips --init
+```
+
+This creates `config/` (default channels, posting window, TikTok settings) and
+`.env.example`.
+
+### 2. Configure secrets
+
+```bash
+cp .env.example .env    # Windows: copy .env.example .env
+```
+
+Edit `.env` and set at minimum:
+
+```ini
+GEMINI_API_KEY=your_gemini_api_key_here
+```
+
+Optionally set `PEXELS_API_KEY` (free at <https://www.pexels.com/api/>) to
+power stock-video backgrounds for generated clips. Without it, generated clips
+use an animated gradient background.
+
+### 3. Provide TikTok cookies (for posting)
+
+TikTok uploads use browser session cookies instead of an API key:
+
+1. Log in to tiktok.com in Chrome.
+2. Export cookies in Netscape format (e.g. the *"Get cookies.txt LOCALLY"*
+   browser extension).
+3. Save as `data/cookies.txt` in the project folder.
+
+Re-export roughly monthly, as sessions drift.
+
+### 4. Verify and run
+
+```bash
+ttclips --validate-session        # cookies OK?
+ttclips --monitor                 # build the watch queue from YouTube feeds
+ttclips --once --dry-run          # full pipeline, no upload
+ttclips --once --slot 12:00       # post one slot now
+ttclips --once --slot 12:00 --no-upload    # render only, don't post
+```
 
 ## How it works
 
 ```
-YouTube RSS feeds ─────────▶ monitor.py (queue of new videos)
-                                   │
-                          yt-dlp + ffmpeg (download, merge + cache reuse)
-                                   ▼
+YouTube RSS feeds ─────────────────▶ monitor (queue of new videos)
+                                     │
+                          yt-dlp + ffmpeg (download, merge, cache)
+                                     ▼
                           faster-whisper (transcription + word timestamps)
-                                   ▼
+                                     ▼
                           Gemini (probe → fallback chain) highlight ranking
-                                   ▼
-                          FFmpeg (crop 9:16 + big centered karaoke captions)
-                                   ▼
-    2 pipelines:  repost clips        OR        generated original clips
-             Gemini highlights  +   Gemini script → edge-tts narration →
-             cut_and_crop_clip        stock b-roll + captions
-                                      (gradient fallback)
-                                   ▼
+                                     ▼
+                          FFmpeg (crop 9:16 + centered karaoke captions)
+                                     ▼
+   two pipelines:    repost clips            OR        generated original clips
+              Gemini highlights        Gemini script → edge-tts narration →
+              cut_and_crop_clip        stock b-roll + captions
+                                        (gradient fallback)
+                                     ▼
                           Playwright → TikTok upload (cookies)
 ```
 
-8 posts/day schedule (`config/posting_window.json`):
+Default posting schedule (`config/posting_window.json`):
 
-| Time | Type |
-|------|------|
-| 08:00 | repost |
-| 10:00 | repost |
+| Time  | Type      |
+|-------|-----------|
+| 08:00 | repost    |
+| 10:00 | repost    |
 | 12:00 | generated |
-| 14:00 | repost |
+| 14:00 | repost    |
 | 16:00 | generated |
-| 18:00 | repost |
+| 18:00 | repost    |
 | 20:00 | generated |
-| 22:00 | repost |
+| 22:00 | repost    |
 
-## Install as a pip package
+## Command-line reference
 
-```powershell
-pip install .            # from a source checkout
-ttclips --init           # scaffold config/ + .env.example into the current dir
-```
+| Command | Description |
+|---------|-------------|
+| `ttclips` | Post the current/upcoming slot (if not already posted today) |
+| `ttclips --init` | Scaffold `config/` + `.env.example` into the project folder |
+| `ttclips --monitor` | Refresh the YouTube watch queue only |
+| `ttclips --validate-session` | Check whether the TikTok cookie session is alive |
+| `ttclips --once` | Post the current/upcoming slot, then exit |
+| `ttclips --once --slot 12:00` | Post a specific slot |
+| `ttclips --once --type generated` | Force a content type (`repost`/`generated`) |
+| `ttclips --catchup` | Post all missed slots for today |
+| `ttclips --dry-run` | Full pipeline, skip upload |
+| `ttclips --no-upload` | Render the real 9:16 MP4 but don't post |
+| `ttclips --post-file <path>` | Upload an already-rendered clip, skipping the pipeline |
+| `ttclips --post-file <path> --caption "..."` | ...with a custom caption |
+| `ttclips --version` | Print the installed version |
+| `ttclips-gemini --probe` | Ping candidate Gemini models and report status |
+| `ttclips-init --home <dir> [--force]` | Scaffold config into a specific directory |
 
-Once published: `pip install ttclips`. The `ttclips` command resolves
-`config/` + `data/` from the **current working directory**, or from
-`$TTCLIPS_HOME` when that variable is set — so an installed CLI can run from
-any empty folder:
-
-```powershell
-mkdir D:\ttclips && cd D:\ttclips
-ttclips --init
-# edit .env (GEMINI_API_KEY), then:
-ttclips --monitor
-```
-
-Running from a source checkout keeps working unchanged simply by cd-ing to the
-repo root. Related console commands: `ttclips-gemini --probe` and
-`ttclips-upload` (the internal upload child process).
-
-## Releasing to PyPI (auto via GitHub Actions)
-
-Pushing a tag `vX.Y.Z` automatically builds the wheel + sdist, runs
-`twine check`, and publishes to PyPI (`.github/workflows/publish.yml`). A
-separate validation workflow (`.github/workflows/ci.yml`) builds + checks the
-package on every push to `main` and every PR — no secrets needed.
-
-Release flow:
-
-1. Bump the version in **both** `pyproject.toml` and `ttclips/__init__.py`
-   (the release workflow refuses to publish a mismatch).
-2. Tag and push:
-
-   ```powershell
-   git add . ; git commit -m "Release v0.1.0"
-   git tag v0.1.0
-   git push origin main --tags
-   ```
-
-3. Watch "Publish to PyPI" on GitHub → Actions. Once green, `pip install ttclips` works.
-
-**First-time publisher setup (trusted publishing — no API token needed):**
-
-- PyPI → [Account settings → Publishing](https://pypi.org/manage/account/publishing/)
-  → **Add a pending publisher** with:
-  - Owner: `kamzysert3` · Repository: `ttclips` · Workflow name: **`publish.yml`**
-- The workflow filename must match **exactly** — it's part of the OIDC claim.
-- The first successful run creates the `ttclips` project on PyPI automatically.
-
-## Setup (Windows)
-
-1. **Python 3.10+** — verify with `python --version`.
-2. `powershell -ExecutionPolicy Bypass -File scripts\setup.ps1`
-   - creates `.venv`, installs deps & Playwright chromium
-   - installs ffmpeg via winget if missing and adds its bin dir to your PATH so
-     yt-dlp's video+audio merge finds it
-   - copies `.env.example` → `.env`
-3. Edit **`.env`** → set `GEMINI_API_KEY` (free at https://aistudio.google.com/apikey)
-   and `PEXELS_API_KEY` (free at https://www.pexels.com/api/ — powers stock
-   backgrounds behind generated clips; leave blank and generated clips keep the
-   gradient backplate).
-4. **TikTok cookies**: log into tiktok.com in Chrome → use the *"Get cookies.txt
-   LOCALLY"* extension → export for tiktok.com → save as `data/cookies.txt`.
-   Re-export roughly monthly (sessions drift).
-
-## Verify
-
-```powershell
-ttclips --validate-session                 # cookies OK?
-ttclips --monitor                          # build watch queue
-ttclips --once --dry-run                   # full pipeline, no upload
-ttclips --once --slot 12:00                # post one slot now
-ttclips --once --slot 12:00 --no-upload    # render only
-ttclips --post-file "data\clips\video.mp4" # post an already-generated clip
-ttclips-gemini --probe                     # ping Gemini model status
-```
-
-Closing flags: `--dry-run` = skip upload, `--no-upload` = render but don't post.
-`--post-file <path>` (optional `--caption "..."`) uploads a clip that is already
-generated, skipping the entire download/transcribe/rank/encode pipeline — handy
-for retrying a stuck upload on a finished clip. On success it records a manual
-entry in `data/posted.json`.
-
-## Scheduled runs (Windows Task Scheduler)
-
-| Task | Trigger | Action |
-|------|---------|--------|
-| ttclips-monitor | Daily 06:00 | refresh the watch queue (`--monitor`) |
-| ttclips-poster | Hourly 07:00→23:00 | `--once` (posts only at configured slot times) |
-
-The scheduler posts exactly once per slot per day; run `--catchup` after the
-machine was off for a while to fill missed slots for today. `scripts/catchup.ps1`
-wraps it. When registering a task, set its *Start in* folder to your ttclips
-project dir (or define `TTCLIPS_HOME`) so `config/` and `data/` resolve.
+Posting flags compose: `--dry-run` skips the upload, `--no-upload` renders the
+clip but doesn't post, and `--post-file` uploads an existing clip directly
+(recording it in `data/posted.json` so it is never reposted).
 
 ## Configuration
 
-- `config/channels.json` — channels to monitor. Fields per channel:
-  `name`, `channel_id`, `enabled`, `keywords` (empty = accept all uploads),
-  `max_moments` (how many clips to post per video, capped at 5).
-- `config/posting_window.json` — the 8 daily slots (`time`, `type`, and a
-  `hint` for generated inspiration).
-- `config/tiktok.json` — browser/headless/delay/retry settings, default hashtags,
-  caption template. Uploads run in an isolated subprocess with retries; waits grow
-  exponentially (`retry_wait_initial_sec`, `retry_wait_backoff`,
-  `retry_wait_max_sec`) after every failure. `user_agent` must stay a recent
-  desktop Chrome UA (the library default Chrome/58 gets TCP-reset by TikTok's
-  WAF); `upload_timeout_sec` gives page loads their budget.
-- `.env` — secrets + models + styling:
-  - `GEMINI_MODEL` + `GEMINI_FALLBACK_MODELS` (comma list) — tried in order; the
-    runtime probes candidates at startup and promotes the healthiest model
-  - `GEMINI_RETRY_TIMEOUT` — hard cap on retrying a stuck model
-  - `WHISPER_MODEL` / `WHISPER_DEVICE`, `TTS_VOICE`, `COOKIES_FILE`
-  - `PEXELS_API_KEY` — stock-video b-roll search for generated clips (free key)
-  - caption knobs: `CAPTION_FONT_SIZE` (96), `CAPTION_ALIGNMENT` (5),
-    `CAPTION_MARGINV`, `CAPTION_OUTLINE`, `CAPTION_SHADOW`,
-    `CAPTION_WORDS_PER_LINE`, `HIGHLIGHT_COLOUR` (yellow), `IDLE_COLOUR` (grey)
+### Target channels (`config/channels.json`)
 
-## Captions
+Each channel entry:
 
-Captions are big (96pt), dead-centered, and karaoke-style: the word currently
-being spoken is bold in the highlight colour while the rest of the line stays
-grey. Repost clips use real whisper word timestamps; generated clips re-transcribe
-their TTS narration with faster-whisper so the karaoke is word-synced too, in
-exactly the same style as reposts.
+| Field | Description |
+|-------|-------------|
+| `name` | Human-readable label (logging) |
+| `channel_id` | YouTube channel ID |
+| `enabled` | `true`/`false` to toggle a channel |
+| `keywords` | Only accept uploads whose title matches at least one keyword; empty = accept all |
+| `max_moments` | Max clips to post per video (1–5) |
 
-## State
+Top-level options:
 
-- `data/queue.json` — discovered videos awaiting processing
-- `data/posted.json` — dedup history (never reposts the same moment twice)
-- `data/downloads/` — merged mp4s (reused on retry, no re-download)
-- `data/clips/` — rendered vertical clips
-- `data/broll/` — cached stock backgrounds for generated clips
-- `data/logs/ttclips.log` — full log
+| Key | Description |
+|-----|-------------|
+| `excluded_keywords` | Titles containing these are skipped (`live`, `stream`, ...) |
+| `min_duration_sec` / `max_duration_sec` | Accepted video length window |
 
-## Resilience
+### Posting window (`config/posting_window.json`)
 
-- **Gemini 503/429 overload**: the probe picks a healthy model at startup and the
-  fallback chain walks through remaining models; retries use jittered backoff
-  bounded by `GEMINI_RETRY_TIMEOUT`. Older flash models (2.x) return 404 for new
-  free-tier keys — use the ones listed in `.env.example`.
-- **YouTube bot-checks**: intermittent "sign in to confirm you're not a bot". The
-  downloader fails loudly; merging is handled by the winget ffmpeg install.
-- **Partial failures**: a failed Gemini post step doesn't waste a 150 MB download —
-  the cached merged mp4 is reused.
-- **B-roll (generated clips)**: backgrounds come from the free Pexels Videos API
-  (`PEXELS_API_KEY`), searched with Gemini-chosen keywords, dimmed and cropped to
-  9:16. If the search, download, or render fails the clip falls back to an
-  animated gradient backplate, so a slot never dies.
+A list of `{"time": "HH:MM", "type": "repost"|"generated", "hint": ""}` slots.
+`hint` feeds the script prompt for generated-content slots.
 
-## Notes & risks
+### TikTok upload settings (`config/tiktok.json`)
 
-- **Copyright**: only repost content you have rights to. Clipping public channels
-  without permission can violate YouTube ToS / creators' rights. Prefer channels
-  that allow embedding/repurposing, or lean on the generated pipeline.
-- **TikTok bot detection**: keep `headless: false`; the human-like delays in
-  `config/tiktok.json` help. If TikTok serves a CAPTCHA the run fails loudly.
-- **UI changes**: selectors in the TikTok uploader may break; pin versions.
-- **Free tier limits**: the Gemini free tier handles dozens of calls/day — fine for
-  a few daily clips.
+| Key | Description |
+|-----|-------------|
+| `headless` | Keep `false` — TikTok's bot detection is stricter headless |
+| `min/max_action_delay_sec` | Human-like pause range between upload actions |
+| `retries` | Upload attempts per clip |
+| `retry_wait_initial_sec` / `retry_wait_backoff` / `retry_wait_max_sec` | Exponential backoff between attempts |
+| `upload_timeout_sec` | Page-load budget |
+| `user_agent` | Keep a recent desktop Chrome UA (stale UAs get reset by TikTok's WAF) |
+| `default_hashtags` | Hashtags appended to every caption |
+
+### Environment variables (`.env`)
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `GEMINI_API_KEY` | — | **Required.** Google AI Studio key |
+| `GEMINI_MODEL` | `gemini-3.6-flash` | Primary ranking/script model |
+| `GEMINI_FALLBACK_MODELS` | `gemini-3.5-flash-lite,gemini-3.1-flash-lite` | Ordered fallbacks tried on 503/429 |
+| `GEMINI_MAX_RETRIES` | `6` | Retries per model before switching |
+| `GEMINI_RETRY_DELAY` | `3` | Initial backoff seconds |
+| `GEMINI_RETRY_MAX_DELAY` | `45` | Backoff cap |
+| `GEMINI_RETRY_TIMEOUT` | `90` | Hard cap on total retry time per model |
+| `WHISPER_MODEL` | `small` | `tiny`/`base`/`small`/`medium`/`large-v3` |
+| `WHISPER_DEVICE` | `auto` | Compute device |
+| `TTS_VOICE` | `en-US-AvaNeural` | edge-tts narration voice |
+| `PEXELS_API_KEY` | — | Optional stock b-roll background source |
+| `FFMPEG_BIN` / `FFPROBE_BIN` | — | Optional explicit binary paths |
+| `CAPTION_FONT_SIZE` | `96` | Caption size (pt) |
+| `CAPTION_ALIGNMENT` | `5` | ASS alignment (`5` = middle-center) |
+| `CAPTION_MARGINV` | `0` | Vertical margin |
+| `CAPTION_OUTLINE` / `CAPTION_SHADOW` | `3` / `2` | Outline/shadow width |
+| `CAPTION_WORDS_PER_LINE` | `6` | Max words per caption line |
+| `HIGHLIGHT_COLOUR` | `0000FFFF` | Active-word colour (ASS BGR, default yellow) |
+| `IDLE_COLOUR` | `00808080` | Rest-of-line colour (ASS BGR, light grey) |
+
+## State and data
+
+| Path | Content |
+|------|---------|
+| `data/queue.json` | Discovered videos awaiting processing |
+| `data/posted.json` | Post history / dedup (never reposts the same moment twice) |
+| `data/downloads/` | Merged MP4s (reused on retry — no re-download) |
+| `data/clips/` | Rendered vertical clips |
+| `data/broll/` | Cached stock backgrounds for generated clips |
+| `data/logs/ttclips.log` | Full log |
+
+## Automation
+
+For unattended daily operation on Windows, register two tasks in **Task
+Scheduler** (set the task *Start in* folder to the project directory, or define
+`TTCLIPS_HOME`):
+
+| Task | Trigger | Action |
+|------|---------|--------|
+| `ttclips-monitor` | Daily 06:00 | `ttclips --monitor` |
+| `ttclips-poster` | Hourly 07:00→23:00 | `ttclips --once` |
+
+The scheduler posts each slot at most once per day. After the machine was off,
+run `ttclips --catchup` to fill the missed slots for today.
+
+## FAQ
+
+<details>
+<summary><b>Do I need a TikTok API key?</b></summary>
+
+No. Uploads use Playwright browser automation with your exported session
+cookies — no developer approval or API key is required.
+</details>
+
+<details>
+<summary><b>Why does the upload fail or hang?</b></summary>
+
+TikTok's bot detection is aggressive. Keep `headless: false` in
+`config/tiktok.json`, use a recent desktop Chrome `user_agent`, and re-export
+cookies monthly. Retries use exponential backoff; a CAPTCHA fails the run
+loudly rather than silently posting.
+</details>
+
+<details>
+<summary><b>Why does it need ffmpeg?</b></summary>
+
+ffmpeg merges YouTube video+audio streams, crops to 9:16, and burns in the
+captions. `ffmpeg` plus `ffprobe` must resolve on `PATH` (or via
+`FFMPEG_BIN`/`FFPROBE_BIN`).
+</details>
+
+<details>
+<summary><b>Gemini keeps erroring (503 / 429 / high demand)?</b></summary>
+
+The runtime probes candidate models at startup and promotes the healthiest one;
+the fallback chain walks through the remaining models with jittered backoff
+bounded by `GEMINI_RETRY_TIMEOUT`. Older `flash` models return 404 for new
+free-tier keys — use the models listed in `.env.example`.
+</details>
+
+<details>
+<summary><b>How do I uninstall?</b></summary>
+
+```bash
+pip uninstall ttclips
+```
+
+State under `data/` and `.env` are not removed.
+</details>
+
+## Development
+
+```bash
+git clone https://github.com/kamzysert3/ttclips.git
+cd ttclips
+python -m venv .venv
+.\.venv\Scripts\activate        # Windows (PowerShell)
+source .venv/bin/activate       # macOS/Linux
+pip install -e .
+playwright install chromium
+```
+
+One-command setup on Windows: `powershell -ExecutionPolicy Bypass -File scripts\setup.ps1`
+(creates the venv, installs the package, Playwright, ffmpeg via winget, and
+`.env` from the example).
+
+There is no formal test suite yet; run `python -m ttclips --version` and a
+`ttclips --once --dry-run` to smoke-test a local checkout.
+
+Contributions are welcome via pull request — keep changes consistent with the
+existing structure and style, and keep `pyproject.toml` + `ttclips/__init__.py`
+versions in sync.
+
+## Releasing
+
+Pushing a version tag builds the distributions and publishes them to PyPI
+automatically (GitHub Actions):
+
+```bash
+git add . && git commit -m "Release v1.0.1"
+git tag v1.0.1
+git push origin main --tags
+```
+
+The release pipeline verifies the tag matches the version in both
+`pyproject.toml` and `ttclips/__init__.py`, builds the wheel + sdist, runs
+`twine check`, and publishes via trusted publishing (OIDC) — no API tokens.
+
+## Legal & operational notes
+
+- **Copyright:** Only repost content you have rights to. Clipping public
+  channels without permission can violate YouTube ToS and creators' rights.
+  Prefer channels that allow embedding/repurposing, or use the generated
+  pipeline.
+- **TikTok ToS:** browser automation to post content is personal-use and
+  may not be permitted for commercial accounts — verify your own risk.
+- **UI changes:** TikTok's uploader selectors can change; pin dependency
+  versions and re-export cookies regularly.
+- **Free-tier limits:** the Gemini free tier handles dozens of calls/day —
+  comfortable for a few daily clips.
+
+## License
+
+[MIT](https://github.com/kamzysert3/ttclips/blob/main/LICENSE) — see the
+`LICENSE` file for full terms.
