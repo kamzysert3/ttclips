@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ttclips"
-version = "1.0.0"
+version = "1.0.1"
 description = "Fully local TikTok clip reposter: YouTube highlight clips + generated shorts, auto-posted via Playwright."
 readme = "README.md"
 requires-python = ">=3.10"
