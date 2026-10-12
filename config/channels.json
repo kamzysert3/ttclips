@@ -1,0 +1,75 @@
+{
+  "channels": [
+    {
+      "name": "CaylusBlox",
+      "channel_id": "UCsPMNatXCwqyUuJilBT73jg",
+      "enabled": true,
+      "max_moments": 2,
+      "keywords": []
+    },
+    {
+      "name": "IShowSpeed",
+      "channel_id": "UCWsDFcIhY2DBi3GB5uykGXA",
+      "enabled": true,
+      "max_moments": 2,
+      "keywords": []
+    },
+    {
+      "name": "CoryxKenshin",
+      "channel_id": "UCiYcA0gJzg855iSKMrX3oHg",
+      "enabled": true,
+      "max_moments": 2,
+      "keywords": []
+    },
+    {
+      "name": "Markiplier",
+      "channel_id": "UC7_YxT-KID8kRbqZo7MyscQ",
+      "enabled": true,
+      "max_moments": 2,
+      "keywords": []
+    },
+    {
+      "name": "Zack D. Films",
+      "channel_id": "UCvz84_Q0BbvZThy75mbd-Dg",
+      "enabled": true,
+      "max_moments": 1,
+      "keywords": []
+    },
+    {
+      "name": "Law by Mike",
+      "channel_id": "UCKmmERguliWTynG9OIoDhDw",
+      "enabled": true,
+      "max_moments": 1,
+      "keywords": []
+    },
+    {
+      "name": "Nick DiGiovanni",
+      "channel_id": "UCMyOj6fhvKFMjxUCp3b_3gA",
+      "enabled": true,
+      "max_moments": 1,
+      "keywords": []
+    },
+    {
+      "name": "DougDoug",
+      "channel_id": "UClyGlKOhDUooPJFy4v_mqPg",
+      "enabled": true,
+      "max_moments": 3,
+      "keywords": []
+    },
+    {
+      "name": "Outdoor Boys",
+      "channel_id": "UCfpCQ89W9wjkHc8J_6eTbBg",
+      "enabled": true,
+      "max_moments": 3,
+      "keywords": []
+    }
+  ],
+  "excluded_keywords": [
+    "live",
+    "stream",
+    "podcast #",
+    "reaction"
+  ],
+  "min_duration_sec": 30,
+  "max_duration_sec": 1800
+}
