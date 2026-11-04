@@ -1,0 +1,4 @@
+{
+  "_comment": "Which platform(s) ttclips posts to. default_target: tiktok | youtube | both. A slot in config/posting_window.json can override this with its own \"targets\" key. Platforms are independent: each one keeps its own per-day slot tracking and its own dedup records in data/posted.json.",
+  "default_target": "tiktok"
+}

@@ -6,7 +6,9 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 from ttclips.config import load_channels
-from ttclips.state import QueueItem, add_to_queue, load_queue, queue_has, video_posted
+from ttclips.platforms import configured_targets
+from ttclips.state import (QueueItem, add_to_queue, load_queue, queue_has,
+                            video_posted_on_all)
 
 log = logging.getLogger(__name__)
 
@@ -92,7 +94,7 @@ def refresh_feeds() -> list[dict]:
             vid = e["video_id"]
             if vid in existing_ids:
                 continue
-            if video_posted(e["url"]):
+            if video_posted_on_all(e["url"], configured_targets()):
                 continue
             title_lower = e["title"].lower()
             if any(ex.lower() in title_lower for ex in excluded):
@@ -116,8 +118,9 @@ def refresh_feeds() -> list[dict]:
 def get_next_repost() -> dict | None:
     """Return the oldest unposted queue entry (for repost pipeline)."""
     queue = load_queue()
+    platforms = configured_targets()
     for item in queue:
-        if not video_posted(item["url"]):
+        if not video_posted_on_all(item["url"], platforms):
             return item
     return None
 

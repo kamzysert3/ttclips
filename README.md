@@ -9,7 +9,8 @@
 Turn **your own YouTube channel** into TikTok content automatically. ttclips
 monitors your channel(s), detects the highlight moments, cuts them into vertical
 9:16 clips with dead-center, word-synced karaoke captions, and posts them to
-TikTok on a schedule — no TikTok API approval, no manual editing, fully local.
+TikTok **and/or YouTube Shorts** on a schedule — no TikTok API approval, no
+Google Cloud project, no manual editing, fully local.
 
 Point it at channels you own or have rights to: this is a repurposing tool for
 creators, not a content scraper (see
@@ -19,6 +20,8 @@ creators, not a content scraper (see
 - **AI-ranked highlights** — whisper transcription + Gemini highlight ranking.
 - **Word-synced captions** — the active word is bold/highlighted in real time.
 - **Cookie-based auth** — no TikTok developer approval / API key needed.
+- **Two independent targets** — TikTok and YouTube Shorts, each with its own
+  schedule tracking and dedup state; post to one, the other, or both.
 - **Self-healing** — model fallback chains, cached downloads, graceful b-roll fallback.
 
 ---
@@ -34,7 +37,9 @@ creators, not a content scraper (see
 - [Configuration](#configuration)
   - [Target channels (`config/channels.json`)](#target-channels)
   - [Posting window (`config/posting_window.json`)](#posting-window)
+  - [Platforms (`config/platforms.json`)](#platforms)
   - [TikTok upload settings (`config/tiktok.json`)](#tiktok-upload-settings)
+  - [YouTube Shorts settings (`config/youtube.json`)](#youtube-upload-settings)
   - [Environment variables (`.env`)](#environment-variables)
 - [State and data](#state-and-data)
 - [Automation (Windows Task Scheduler)](#automation)
@@ -60,9 +65,9 @@ creators, not a content scraper (see
   stock b-roll (Pexels) or an animated gradient backs the clip.
 - **Scheduled posting** — up to 8 posts/day at configurable times, with
   catch-up for missed slots.
-- **Resilient uploads** — Playwright-driven TikTok uploads with human-like
-  delays, exponential backoff retries, and an isolated subprocess so a crashed
-  upload can never take the scheduler down.
+- **Resilient uploads** — Playwright-driven TikTok *and* YouTube Studio uploads
+  with human-like delays, exponential backoff retries, and an isolated
+  subprocess so a crashed upload can never take the scheduler down.
 - **Reusable state** — never re-downloads a video or reposts the same moment.
 
 ## Requirements
@@ -76,7 +81,9 @@ creators, not a content scraper (see
     your own binaries.
 - **Playwright Chromium** — installed once, see [Installation](#installation).
 - **A Gemini API key** — free at <https://aistudio.google.com/apikey>.
-- **TikTok cookies** (only needed for the upload step) — see
+- **TikTok cookies** (only needed for the TikTok upload step) — see
+  [Quickstart](#quickstart).
+- **Google cookies** (only needed for the YouTube Shorts upload step) — see
   [Quickstart](#quickstart).
 
 ## Installation
@@ -114,9 +121,9 @@ mkdir my-clips && cd my-clips
 ttclips --init --yes
 ```
 
-This creates `config/` (default channels, posting window, TikTok settings) and
-`.env.example`. The `--yes` flag acknowledges that you own (or have rights to)
-the channels you will repost — see
+This creates `config/` (default channels, posting window, TikTok + YouTube
+settings, platform defaults) and `.env.example`. The `--yes` flag acknowledges
+that you own (or have rights to) the channels you will repost — see
 [`docs/LEGAL.md`](https://github.com/kamzysert3/ttclips/blob/main/docs/LEGAL.md).
 
 ### 2. Configure secrets
@@ -146,15 +153,34 @@ TikTok uploads use browser session cookies instead of an API key:
 
 Re-export roughly monthly, as sessions drift.
 
-### 4. Verify and run
+### 4. Provide Google cookies (only for YouTube Shorts)
+
+YouTube Shorts are posted through **YouTube Studio** with the same
+cookie-auth approach:
+
+1. Log in to <https://studio.youtube.com> in Chrome.
+2. Export cookies in Netscape format (the *"Get cookies.txt LOCALLY"* extension
+   works for Google as well).
+3. Save as `data/youtube_cookies.txt` in the project folder.
+
+No Google Cloud project, no OAuth app and no API audit are needed — Studio
+uploads are ordinary uploads. See
+[Why not the YouTube Data API?](#why-not-the-youtube-data-api).
+
+### 5. Verify and run
 
 ```bash
-ttclips --validate-session        # cookies OK?
+ttclips --validate-session        # TikTok cookies OK?
+ttclips --validate-youtube        # YouTube cookies OK?
 ttclips --monitor                 # build the watch queue from YouTube feeds
 ttclips --once --dry-run          # full pipeline, no upload
 ttclips --once --slot 12:00       # post one slot now
 ttclips --once --slot 12:00 --no-upload    # render only, don't post
+ttclips --once --target youtube   # post the slot to YouTube Shorts instead
 ```
+
+Pick the default target in `config/platforms.json` (`tiktok`, `youtube` or
+`both`) or override it per run with `--target`.
 
 ## How it works
 
@@ -174,7 +200,10 @@ YouTube RSS feeds ─────────────────▶ monitor
               cut_and_crop_clip        stock b-roll + captions
                                         (gradient fallback)
                                      ▼
-                          Playwright → TikTok upload (cookies)
+                          one clip, fanned out to the target platforms
+                                     ▼
+            Playwright → TikTok upload        Playwright → YouTube Studio upload
+              (data/cookies.txt)                 (data/youtube_cookies.txt)
 ```
 
 Default posting schedule (`config/posting_window.json`):
@@ -198,9 +227,12 @@ Default posting schedule (`config/posting_window.json`):
 | `ttclips --init --yes` | Scaffold `config/` + `.env.example` into the project folder; `--yes` acknowledges you own the content you will repost |
 | `ttclips --monitor` | Refresh the YouTube watch queue only |
 | `ttclips --validate-session` | Check whether the TikTok cookie session is alive |
+| `ttclips --validate-youtube` | Check whether the YouTube (Studio) cookie session is alive |
 | `ttclips --once` | Post the current/upcoming slot, then exit |
 | `ttclips --once --slot 12:00` | Post a specific slot |
 | `ttclips --once --type generated` | Force a content type (`repost`/`generated`) |
+| `ttclips --once --target youtube` | Post to YouTube Shorts (`tiktok`, `youtube` or `both`) |
+| `ttclips --target both --catchup` | Fill every missed slot on both platforms |
 | `ttclips --catchup` | Post all missed slots for today |
 | `ttclips --dry-run` | Full pipeline, skip upload |
 | `ttclips --no-upload` | Render the real 9:16 MP4 but don't post |
@@ -209,6 +241,8 @@ Default posting schedule (`config/posting_window.json`):
 | `ttclips --version` | Print the installed version |
 | `ttclips-gemini --probe` | Ping candidate Gemini models and report status |
 | `ttclips-init --home <dir> --yes [--force]` | Scaffold config into a specific directory |
+| `ttclips-youtube --probe` | Dump the YouTube Studio DOM (diagnostic, never posts) |
+| `ttclips-youtube --validate-session` | Check the YouTube session from the terminal |
 
 Posting flags compose: `--dry-run` skips the upload, `--no-upload` renders the
 clip but doesn't post, and `--post-file` uploads an existing clip directly
@@ -238,7 +272,45 @@ Top-level options:
 ### Posting window (`config/posting_window.json`)
 
 A list of `{"time": "HH:MM", "type": "repost"|"generated", "hint": ""}` slots.
-`hint` feeds the script prompt for generated-content slots.
+`hint` feeds the script prompt for generated-content slots. An optional
+`"targets"` key overrides the platform(s) for that single slot
+(`"targets": "youtube"`), e.g.:
+
+```json
+{ "time": "12:00", "type": "generated", "hint": "", "targets": "both" }
+```
+
+### Platforms (`config/platforms.json`)
+
+| Key | Description |
+|-----|-------------|
+| `default_target` | `tiktok` (default), `youtube` or `both` |
+
+The two platforms are **independent**: each keeps its own per-day slot
+tracking and its own dedup records in `data/posted.json`, so a source video
+posted to TikTok is still eligible for a YouTube Short. The CLI flag
+`--target tiktok|youtube|both` overrides the config for a single run.
+
+`default_target` is also the **queue policy**: a source video stays in
+`data/queue.json` until every configured platform has it.
+
+| `default_target` | Queue behaviour |
+|------------------|-----------------|
+| `tiktok` | the source leaves the queue after its TikTok posts (legacy behaviour) |
+| `both` | the source stays queued until TikTok *and* YouTube have it |
+
+To run the two platforms from **separate** scheduled tasks, set
+`default_target` to `both` and give each task its own `--target`:
+
+```powershell
+# Task Scheduler -> ttclips-poster
+ttclips --once --target tiktok
+# Task Scheduler -> ttclips-poster-youtube
+ttclips --once --target youtube
+```
+
+Both tasks then work off the same queue without evicting each other's work —
+a one-off `--target` run never removes a source another platform still owes.
 
 ### TikTok upload settings (`config/tiktok.json`)
 
@@ -251,6 +323,31 @@ A list of `{"time": "HH:MM", "type": "repost"|"generated", "hint": ""}` slots.
 | `upload_timeout_sec` | Page-load budget |
 | `user_agent` | Keep a recent desktop Chrome UA (stale UAs get reset by TikTok's WAF) |
 | `default_hashtags` | Hashtags appended to every caption |
+
+### YouTube Shorts settings (`config/youtube.json`)
+
+| Key | Description |
+|-----|-------------|
+| `headless` | Keep `false` — Studio's upload dialog is flaky headless |
+| `channel_id` | Optional `UC…` channel id; skips the "CREATE → Upload videos" clicks |
+| `cookies_file` | Path to the exported Google cookies (`data/youtube_cookies.txt`) |
+| `visibility` | `public` (default), `unlisted` or `private` |
+| `made_for_kids` | `false` by default |
+| `default_hashtags` | Hashtags added to every Short (`#Shorts` is appended automatically) |
+| `include_source_link` | Adds the original YouTube URL to the description of reposts |
+| `max_duration_sec` | `180` — the Shorts length limit |
+| `min/max_action_delay_sec`, `retries`, `retry_wait_*`, `upload_timeout_sec`, `user_agent` | Same meaning as in `config/tiktok.json` |
+| `selectors` | Override any Studio CSS selector when YouTube changes its markup |
+
+`selectors` accepts a single CSS selector or a list of alternatives, e.g.:
+
+```json
+{ "selectors": { "post_button": ["ytcp-post-button", "button.post-button"] } }
+```
+
+When Studio changes its layout, run `ttclips-youtube --probe` — it writes
+`data/cache/probe/{dom.html,elements.json,screen.png}` so the new selectors can
+be picked without reading the code.
 
 ### Environment variables (`.env`)
 
@@ -268,6 +365,8 @@ A list of `{"time": "HH:MM", "type": "repost"|"generated", "hint": ""}` slots.
 | `TTS_VOICE` | `en-US-AvaNeural` | edge-tts narration voice |
 | `PEXELS_API_KEY` | — | Optional stock b-roll background source |
 | `FFMPEG_BIN` / `FFPROBE_BIN` | — | Optional explicit binary paths |
+| `COOKIES_FILE` | `data/cookies.txt` | TikTok session cookies (Netscape format) |
+| `YOUTUBE_COOKIES_FILE` | `data/youtube_cookies.txt` | Google session cookies (Netscape format) |
 | `CAPTION_FONT_SIZE` | `96` | Caption size (pt) |
 | `CAPTION_ALIGNMENT` | `5` | ASS alignment (`5` = middle-center) |
 | `CAPTION_MARGINV` | `0` | Vertical margin |
@@ -281,9 +380,12 @@ A list of `{"time": "HH:MM", "type": "repost"|"generated", "hint": ""}` slots.
 | Path | Content |
 |------|---------|
 | `data/queue.json` | Discovered videos awaiting processing |
-| `data/posted.json` | Post history / dedup (never reposts the same moment twice) |
+| `data/posted.json` | Post history / dedup, per platform (never reposts the same moment twice) |
+| `data/cookies.txt` | TikTok session cookies (git-ignored) |
+| `data/youtube_cookies.txt` | Google session cookies (git-ignored) |
 | `data/downloads/` | Merged MP4s (reused on retry — no re-download) |
 | `data/clips/` | Rendered vertical clips |
+| `data/cache/` | Cached transcripts + highlight rankings (so a second platform run is cheap) |
 | `data/broll/` | Cached stock backgrounds for generated clips |
 | `data/logs/ttclips.log` | Full log |
 
@@ -297,9 +399,15 @@ Scheduler** (set the task *Start in* folder to the project directory, or define
 |------|---------|--------|
 | `ttclips-monitor` | Daily 06:00 | `ttclips --monitor` |
 | `ttclips-poster` | Hourly 07:00→23:00 | `ttclips --once` |
+| `ttclips-poster-youtube` | Hourly 07:00→23:00 | `ttclips --once --target youtube` |
 
-The scheduler posts each slot at most once per day. After the machine was off,
-run `ttclips --catchup` to fill the missed slots for today.
+The scheduler posts each slot at most once per day **per platform**. After the
+machine was off, run `ttclips --catchup` to fill the missed slots for today
+(add `--target youtube` for the YouTube-only variant).
+
+To let the two platform tasks share one queue, set `"default_target": "both"`
+in `config/platforms.json` — see
+[Platforms](#platforms).
 
 ## FAQ
 
@@ -311,12 +419,55 @@ cookies — no developer approval or API key is required.
 </details>
 
 <details>
+<summary><b>Why not the YouTube Data API?</b></summary>
+
+Since 28 July 2020, videos uploaded through the YouTube Data API by a project
+that has **not** completed YouTube's compliance audit are locked as *private*
+and cannot be published — not even by hand in Studio. Passing that audit takes
+weeks and usually requires a Google Cloud project.
+
+ttclips therefore drives **YouTube Studio** with Playwright, using the same
+cookie-based approach as TikTok. A Studio upload is an ordinary upload: it is
+public immediately and needs no Google Cloud project, no OAuth app and no API
+review.
+</details>
+
+<details>
+<summary><b>Do I need a Google Cloud project or API key for Shorts?</b></summary>
+
+No. Only exported browser cookies for a logged-in `studio.youtube.com` session
+(`data/youtube_cookies.txt`). There is no OAuth client, no quota and no audit.
+</details>
+
+<details>
+<summary><b>How do TikTok and YouTube Shorts interact?</b></summary>
+
+They are independent targets. Each platform tracks its own slots per day and
+its own dedup records in `data/posted.json`, so a source video posted to
+TikTok can still be posted as a Short, and a clip that failed on one platform
+is retried on that platform only. `--target both` renders a clip once and
+uploads it to both. A source only leaves the queue once **every** platform
+listed in `config/platforms.json` has it.
+</details>
+
+<details>
+<summary><b>The YouTube upload clicks the wrong button / can't find the fields.</b></summary>
+
+YouTube Studio's markup changes from time to time. Run
+`ttclips-youtube --probe` and inspect `data/cache/probe/elements.json` for the
+current element names, then override the selector in `config/youtube.json`
+under `"selectors"` — no code change needed.
+</details>
+
+<details>
 <summary><b>Why does the upload fail or hang?</b></summary>
 
 TikTok's bot detection is aggressive. Keep `headless: false` in
 `config/tiktok.json`, use a recent desktop Chrome `user_agent`, and re-export
 cookies monthly. Retries use exponential backoff; a CAPTCHA fails the run
-loudly rather than silently posting.
+loudly rather than silently posting. The same applies to YouTube Studio —
+keep `headless: false` in `config/youtube.json` and re-export the Google
+cookies when the session expires (`ttclips --validate-youtube`).
 </details>
 
 <details>
@@ -363,7 +514,14 @@ One-command setup on Windows: `powershell -ExecutionPolicy Bypass -File scripts\
 `.env` from the example).
 
 There is no formal test suite yet; run `python -m ttclips --version` and a
-`ttclips --once --dry-run` to smoke-test a local checkout.
+`ttclips --once --dry-run` to smoke-test a local checkout. Three offline
+checks ship with the repo and need no network, no cookies and no API keys:
+
+```bash
+.\.venv\Scripts\python.exe scripts\check_targets.py       # platform-aware state + metadata
+.\.venv\Scripts\python.exe scripts\check_repost_flow.py   # cross-post fan-out with stubbed uploaders
+.\.venv\Scripts\python.exe scripts\check_youtube_flow.py  # Studio automation against a mock DOM
+```
 
 Contributions are welcome via pull request — keep changes consistent with the
 existing structure and style, and keep `pyproject.toml` + `ttclips/__init__.py`
@@ -375,8 +533,8 @@ Pushing a version tag builds the distributions and publishes them to PyPI
 automatically (GitHub Actions):
 
 ```bash
-git add . && git commit -m "Release v1.0.2"
-git tag v1.0.2
+git add . && git commit -m "Release v1.1.0"
+git tag v1.1.0
 git push origin main --tags
 ```
 
@@ -393,8 +551,12 @@ The release pipeline verifies the tag matches the version in both
   [`docs/LEGAL.md`](https://github.com/kamzysert3/ttclips/blob/main/docs/LEGAL.md).
 - **TikTok ToS:** browser automation to post content is personal-use and
   may not be permitted for commercial accounts — verify your own risk.
-- **UI changes:** TikTok's uploader selectors can change; pin dependency
-  versions and re-export cookies regularly.
+- **YouTube ToS:** posting to YouTube Studio is done with browser automation
+  on your own account. Automated posting can breach YouTube's Terms of
+  Service, and re-uploading content you do not own is a copyright violation.
+- **UI changes:** TikTok's and YouTube Studio's uploader selectors can change;
+  pin dependency versions, re-export cookies regularly and use the
+  `selectors` overrides in the config files.
 - **Free-tier limits:** the Gemini free tier handles dozens of calls/day —
   comfortable for a few daily clips.
 

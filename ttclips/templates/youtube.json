@@ -1,0 +1,23 @@
+{
+  "_comment": "YouTube Shorts posting settings. Uploads are driven through YouTube Studio with Playwright using your exported Google session cookies (Netscape format) in data/youtube_cookies.txt - see scripts/setup.ps1. The YouTube Data API is deliberately NOT used: videos uploaded by an unverified API project are locked as private and cannot be published without passing YouTube's compliance audit. headless: keep false if Studio refuses to load the upload dialog. channel_id: optional - your channel id (UC...) speeds up navigation to the upload page. cookies_file: path to the exported cookies (Netscape format) from a logged-in studio.youtube.com session. visibility: public|unlisted|private. made_for_kids: false. category_id: 27 = Entertainment. default_hashtags: appended to every Short. include_source_link: adds the original YouTube URL to the description of reposts. max_duration_sec: 180 - the Shorts limit. selectors: override any Studio selector here if YouTube changes its markup (a comma-separated string or a list of alternatives).",
+  "headless": false,
+  "min_action_delay_sec": 6,
+  "max_action_delay_sec": 22,
+  "retries": 2,
+  "upload_timeout_sec": 300,
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+  "retry_wait_initial_sec": 30,
+  "retry_wait_backoff": 2.0,
+  "retry_wait_max_sec": 300,
+  "channel_id": "",
+  "cookies_file": "data/youtube_cookies.txt",
+  "visibility": "public",
+  "made_for_kids": false,
+  "category_id": "27",
+  "default_hashtags": "#Shorts #fyp",
+  "append_shorts_hashtag": true,
+  "include_source_link": true,
+  "max_title_len": 100,
+  "max_description_len": 5000,
+  "max_duration_sec": 180
+}

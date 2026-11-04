@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 
 from ttclips.config import CLIPS_DIR, COOKIES_FILE, PROBE_DIR, load_env, load_tiktok_config
+from ttclips.cookies import TIKTOK_DOMAINS, cookies_to_storage_state
 
 log = logging.getLogger(__name__)
 TK_CFG = load_tiktok_config()
@@ -280,43 +281,9 @@ def _validate_cookies() -> Path:
 def _cookies_to_storage_state(cookies_path: Path) -> dict:
     """Convert a Netscape-format cookies.txt into Playwright storageState JSON.
 
-    Fields per line (tab-separated):
-        domain  includeSubdomains  path  secure  expires  name  value
-    A line may start with ``#HttpOnly_`` before the domain (httpOnly cookie).
+    TikTok-only variant of :func:`ttclips.cookies.cookies_to_storage_state`.
     """
-    cookies = []
-    for line in cookies_path.read_text(encoding="utf-8", errors="replace").splitlines():
-        if not line:
-            continue
-        http_only = False
-        if line.startswith("#HttpOnly_"):
-            http_only = True
-            line = line[len("#HttpOnly_"):]
-        elif line.startswith("#"):
-            continue
-        parts = line.split("\t")
-        if len(parts) < 7:
-            continue
-        domain, _, path, secure, expires, name, value = parts[:7]
-        if "tiktok.com" not in domain:
-            continue
-        try:
-            expires_sec = int(round(float(expires)))
-        except ValueError:
-            expires_sec = -1
-        cookies.append({
-            "name": name,
-            "value": value,
-            "domain": domain,
-            "path": path or "/",
-            "expires": expires_sec if expires_sec > 0 else -1,
-            "httpOnly": http_only,
-            "secure": secure.lower() == "true",
-            "sameSite": "Lax",
-        })
-    state = {"cookies": cookies, "origins": []}
-    log.info("Parsed %d TikTok cookies from %s", len(cookies), cookies_path.name)
-    return state
+    return cookies_to_storage_state(cookies_path, TIKTOK_DOMAINS)
 
 
 def _upload_once(video_path: str, caption: str, cookies_file: str = "") -> bool:

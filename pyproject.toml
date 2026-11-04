@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ttclips"
-version = "1.0.2"
-description = "Fully local TikTok clip reposter: YouTube highlight clips + generated shorts, auto-posted via Playwright."
+version = "1.1.0"
+description = "Fully local clip reposter: YouTube highlight clips + generated shorts, auto-posted to TikTok and YouTube Shorts."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -41,6 +41,7 @@ ttclips = "ttclips.scheduler:main"
 ttclips-init = "ttclips.scaffold:main"
 ttclips-gemini = "ttclips.gemini:main"
 ttclips-upload = "ttclips.uploader:main"
+ttclips-youtube = "ttclips.youtube_uploader:main"
 
 [tool.setuptools.packages.find]
 include = ["ttclips*"]

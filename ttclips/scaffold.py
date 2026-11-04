@@ -16,13 +16,15 @@ from ttclips.config import HOME
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
-CONFIG_FILES = ("channels.json", "posting_window.json", "tiktok.json")
+CONFIG_FILES = ("channels.json", "posting_window.json", "tiktok.json",
+                "youtube.json", "platforms.json")
 
 OWNERSHIP_NOTICE = (
-    "ttclips posts content to TikTok automatically. Only configure channels you "
-    "OWN or have rights to repost. Clipping content you don't own may violate "
-    "YouTube's Terms of Service, TikTok's Terms of Service, and creators' "
-    "rights. See https://github.com/kamzysert3/ttclips/blob/main/docs/LEGAL.md"
+    "ttclips posts content to TikTok and YouTube Shorts automatically. Only "
+    "configure channels you OWN or have rights to repost. Clipping content "
+    "you don't own may violate YouTube's Terms of Service, TikTok's Terms of "
+    "Service, and creators' rights. See "
+    "https://github.com/kamzysert3/ttclips/blob/main/docs/LEGAL.md"
 )
 
 ACKNOWLEDGEMENT = (

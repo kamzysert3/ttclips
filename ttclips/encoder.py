@@ -1,6 +1,7 @@
 """FFmpeg encoder: 9:16 vertical clip production with burnt-in captions."""
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
 from pathlib import Path
@@ -57,6 +58,29 @@ def probe_duration(path: Path) -> float:
         return float(out.strip())
     except Exception:
         return 0.0
+
+
+def probe_video(path: Path) -> dict:
+    """Return ``{"duration": float, "width": int, "height": int}`` for a file.
+
+    Missing binaries or unreadable files yield zeros rather than raising —
+    callers decide whether that is fatal.
+    """
+    info = {"duration": 0.0, "width": 0, "height": 0}
+    try:
+        out = subprocess.check_output([
+            _ffprobe(), "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height:format=duration",
+            "-of", "json", str(path),
+        ], stderr=subprocess.DEVNULL, text=True)
+        data = json.loads(out or "{}")
+        stream = (data.get("streams") or [{}])[0]
+        info["width"] = int(stream.get("width") or 0)
+        info["height"] = int(stream.get("height") or 0)
+        info["duration"] = float(data.get("format", {}).get("duration") or 0.0)
+    except Exception:
+        pass
+    return info
 
 
 def _safe_path(p: Path) -> str:

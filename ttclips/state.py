@@ -24,6 +24,8 @@ class PostRecord:
     slot: str = ""  # e.g. "08:00"
     posted_at: str = ""
     channel: str = ""
+    platform: str = "tiktok"  # "tiktok" | "youtube"
+    remote_id: str = ""  # posted video id / url on the target platform
 
 
 @dataclass
@@ -57,17 +59,41 @@ def load_posts() -> list[dict]:
     return _read(STATE_FILE)
 
 
+def platform_of(record: dict) -> str:
+    """Platform a post record belongs to (records written before multi-target
+    posting existed are TikTok posts)."""
+    return str(record.get("platform") or "tiktok").lower()
+
+
+def _field_matches(record: dict, key: str, value) -> bool:
+    if key == "platform":
+        return platform_of(record) == str(value).lower()
+    return record.get(key) == value
+
+
 def is_posted(**fields) -> bool:
     with _lock:
         posts = load_posts()
         for p in posts:
-            if all(p.get(k) == v for k, v in fields.items()):
+            if all(_field_matches(p, k, v) for k, v in fields.items()):
                 return True
     return False
 
 
-def video_posted(source_url: str) -> bool:
-    return is_posted(kind="repost", source_url=source_url)
+def video_posted(source_url: str, platform: str = "tiktok") -> bool:
+    return is_posted(kind="repost", source_url=source_url, platform=platform)
+
+
+def source_posted_on(source_url: str, platform: str) -> bool:
+    """True when *source_url* has at least one clip posted to *platform*."""
+    return video_posted(source_url, platform=platform)
+
+
+def video_posted_on_all(source_url: str, platforms: list[str]) -> bool:
+    """True when *source_url* has been posted on every listed platform."""
+    if not platforms:
+        return False
+    return all(video_posted(source_url, platform=p) for p in platforms)
 
 
 def add_post(record: PostRecord) -> None:
@@ -77,11 +103,13 @@ def add_post(record: PostRecord) -> None:
         _write(STATE_FILE, posts)
 
 
-def slot_posted_today(slot: str) -> bool:
+def slot_posted_today(slot: str, platform: str = "tiktok") -> bool:
     today = datetime.now().strftime("%Y-%m-%d")
     with _lock:
         return any(
-            p.get("slot") == slot and (p.get("posted_at") or "").startswith(today)
+            p.get("slot") == slot
+            and (p.get("posted_at") or "").startswith(today)
+            and platform_of(p) == str(platform).lower()
             for p in load_posts()
         )
 
@@ -118,8 +146,8 @@ def pull_next_unprocessed() -> dict | None:
     with _lock:
         queue = load_queue()
         posts = load_posts()
-        posted = {(p.get("source_url"), p.get("kind")) for p in posts}
+        posted = {(p.get("source_url"), p.get("kind"), platform_of(p)) for p in posts}
         for q in queue:
-            if (q.get("url"), "repost") not in posted:
+            if (q.get("url"), "repost", "tiktok") not in posted:
                 return q
     return None

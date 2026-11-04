@@ -38,9 +38,11 @@ PROBE_DIR = DATA_DIR / "probe"
 STATE_FILE = DATA_DIR / "posted.json"
 QUEUE_FILE = DATA_DIR / "queue.json"
 COOKIES_FILE = DATA_DIR / "cookies.txt"
+YOUTUBE_COOKIES_FILE = DATA_DIR / "youtube_cookies.txt"
+CACHE_DIR = DATA_DIR / "cache"
 LOG_FILE = LOGS_DIR / "ttclips.log"
 
-for _d in (DATA_DIR, DOWNLOADS_DIR, CLIPS_DIR, LOGS_DIR):
+for _d in (DATA_DIR, DOWNLOADS_DIR, CLIPS_DIR, LOGS_DIR, CACHE_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 
@@ -61,6 +63,16 @@ def load_posting_window() -> list[dict]:
 
 def load_tiktok_config() -> dict:
     return load_json(CONFIG_DIR / "tiktok.json", default={})
+
+
+def load_youtube_config() -> dict:
+    """YouTube Shorts (Studio automation) settings."""
+    return load_json(CONFIG_DIR / "youtube.json", default={})
+
+
+def load_platforms_config() -> dict:
+    """Which platform(s) to post to by default (see config/platforms.json)."""
+    return load_json(CONFIG_DIR / "platforms.json", default={})
 
 
 def load_env() -> dict:

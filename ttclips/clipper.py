@@ -5,7 +5,7 @@ import json
 import logging
 from pathlib import Path
 
-from ttclips.config import load_env
+from ttclips.config import CACHE_DIR, load_env
 from ttclips.gemini import call_with_model_retry, resolve_models
 
 log = logging.getLogger(__name__)
@@ -25,12 +25,26 @@ def _get_whisper():
     return _whisper_model
 
 
-def transcribe(video_path: Path, *, word_timestamps: bool = True) -> list[dict]:
+def transcribe(video_path: Path, *, word_timestamps: bool = True,
+               use_cache: bool = True) -> list[dict]:
     """Return whisper segments as [{start, end, text, words?}] with second precision.
 
     ``words`` (when enabled) is a list of {"word", "start", "end"} used by the
     encoder for word-synced caption burning.
+
+    Results are cached under ``data/cache/`` so a second posting run (e.g.
+    cross-posting the same source to another platform) does not re-transcribe.
     """
+    cache_file = CACHE_DIR / f"transcript_{video_path.stem}.json"
+    if use_cache and cache_file.exists():
+        try:
+            cached = json.loads(cache_file.read_text(encoding="utf-8"))
+            if isinstance(cached, list) and cached:
+                log.info("Reusing cached transcript: %s", cache_file.name)
+                return cached
+        except (json.JSONDecodeError, OSError):
+            pass
+
     model = _get_whisper()
     segments, info = model.transcribe(
         str(video_path),
@@ -53,6 +67,11 @@ def transcribe(video_path: Path, *, word_timestamps: bool = True) -> list[dict]:
             "words": words,
         })
     log.info("Transcribed %s -> %d segments (~%.0fs audio)", video_path.name, len(out), info.duration or 0)
+    if use_cache:
+        try:
+            cache_file.write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
+        except OSError as e:
+            log.warning("Could not write transcript cache %s: %s", cache_file.name, e)
     return out
 
 
@@ -108,9 +127,31 @@ def _sanitize_hashtags(raw, limit: int = 4) -> list[str]:
     return out
 
 
-def rank_highlights(segments: list[dict], num_clips: int = 3) -> list[dict]:
-    """Rank transcript moments via Gemini.  Returns highlight dicts."""
+_HIGHLIGHT_CACHE_VERSION = 1
+
+
+def rank_highlights(segments: list[dict], num_clips: int = 3,
+                    *, cache_key: str = "") -> list[dict]:
+    """Rank transcript moments via Gemini.  Returns highlight dicts.
+
+    When ``cache_key`` is given the ranking is cached under ``data/cache/``
+    so the same source video is only ranked once, even when it is posted to
+    several platforms.
+    """
     num_clips = max(1, int(num_clips))
+    cache_file = CACHE_DIR / f"highlights_{cache_key}_{num_clips}.json" if cache_key else None
+    if cache_file and cache_file.exists():
+        try:
+            cached = json.loads(cache_file.read_text(encoding="utf-8"))
+            if (isinstance(cached, dict)
+                    and cached.get("version") == _HIGHLIGHT_CACHE_VERSION
+                    and isinstance(cached.get("highlights"), list)
+                    and cached["highlights"]):
+                log.info("Reusing cached highlight ranking: %s", cache_file.name)
+                return cached["highlights"]
+        except (json.JSONDecodeError, OSError):
+            pass
+
     text = _transcript_text(segments)
     # Bound token input ~ 60k chars; chunk the transcript if longer.
     text = text[:60000]
@@ -158,8 +199,17 @@ def rank_highlights(segments: list[dict], num_clips: int = 3) -> list[dict]:
         h["hashtags"] = _sanitize_hashtags(h.get("hashtags"))
         valid.append(h)
     valid.sort(key=lambda x: x.get("score", 0), reverse=True)
+    valid = valid[:num_clips]
     log.info("Gemini ranked %d valid highlights", len(valid))
-    return valid[:num_clips]
+    if cache_file and valid:
+        try:
+            cache_file.write_text(
+                json.dumps({"version": _HIGHLIGHT_CACHE_VERSION, "highlights": valid},
+                           ensure_ascii=False),
+                encoding="utf-8")
+        except OSError as e:
+            log.warning("Could not write highlight cache %s: %s", cache_file.name, e)
+    return valid
 
 
 def pick_best_highlight(segments: list[dict]) -> dict | None:

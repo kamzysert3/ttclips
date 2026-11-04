@@ -57,3 +57,9 @@ Write-Host "  3. Test:        .\.venv\Scripts\python.exe -m ttclips --validate-s
 Write-Host "  4. Dry run:     .\.venv\Scripts\python.exe -m ttclips --monitor"
 Write-Host "  5. First post:  .\.venv\Scripts\python.exe -m ttclips --once --slot 12:00 --dry-run"
 Write-Host "  6. Schedule in Task Scheduler (see README)."
+Write-Host ""
+Write-Host "Optional - YouTube Shorts posting:" -ForegroundColor Cyan
+Write-Host "  a. Log into https://studio.youtube.com in Chrome, export cookies (Get cookies.txt LOCALLY) to data\youtube_cookies.txt"
+Write-Host "  b. Test:        .\.venv\Scripts\python.exe -m ttclips --validate-youtube"
+Write-Host "  c. Post:       .\.venv\Scripts\python.exe -m ttclips --once --target youtube"
+Write-Host "  d. Set 'default_target' in config\platforms.json to 'youtube' or 'both'."

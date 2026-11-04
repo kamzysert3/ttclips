@@ -6,7 +6,9 @@ data/downloads/
 data/clips/
 data/logs/
 data/cookies.txt
+data/youtube_cookies.txt
 data/posted.json
+data/cache/
 .env
 dist/
 build/
