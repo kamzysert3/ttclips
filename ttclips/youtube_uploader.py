@@ -4,11 +4,12 @@ Uploads run in a child subprocess (``python -m ttclips.youtube_uploader
 <video>``) so a Playwright/thread crash inside one attempt can never poison
 the scheduler process.
 
-Why the Studio UI and not the YouTube Data API: since 28 July 2020, videos
-uploaded by an *unverified* API project are locked as private and cannot be
-published (not even manually in Studio). Lifting that requires passing
-YouTube's compliance audit. Driving the Studio UI performs a normal upload
-and needs no Google Cloud project at all.
+Two backends (``backend`` in config/youtube.json):
+
+* ``studio`` (default) — drives the Studio UI. Needs no Google Cloud project.
+* ``api`` — the official YouTube Data API v3 (:mod:`ttclips.youtube_api`).
+  Since 28 July 2020, videos uploaded by an *unaudited* API project are
+  locked as private until the project passes YouTube's compliance audit.
 """
 from __future__ import annotations
 
@@ -55,6 +56,8 @@ INCLUDE_SOURCE_LINK = bool(YT_CFG.get("include_source_link", True))
 MAX_TITLE_LEN = int(YT_CFG.get("max_title_len", 100))
 MAX_DESC_LEN = int(YT_CFG.get("max_description_len", 5000))
 MAX_DURATION_SEC = float(YT_CFG.get("max_duration_sec", 180))
+# "studio" (Playwright, default) or "api" (official Data API v3, see youtube_api.py)
+BACKEND = str(YT_CFG.get("backend", "studio") or "studio").strip().lower()
 
 # ---------------------------------------------------------------------------
 # Studio selectors. Studio is a React app whose markup changes regularly, so
@@ -574,14 +577,26 @@ def _run_upload_child(video_path: str, title: str, description: str,
 
 def upload_short(video_path: str, title: str, description: str, *,
                  visibility: str = "", made_for_kids: bool = False,
-                 cookies: str = "") -> tuple[bool, str]:
+                 cookies: str = "", tags: list[str] | None = None) -> tuple[bool, str]:
     """Upload one vertical clip to YouTube as a Short.
 
-    Each attempt runs in a fresh subprocess so a Playwright crash in one
+    Dispatches on ``backend`` in config/youtube.json. With the Studio backend
+    each attempt runs in a fresh subprocess so a Playwright crash in one
     attempt can never poison the scheduler process. Returns
     ``(success, video_url)`` — the URL may be empty when YouTube did not
     expose the id of the posted video.
     """
+    if BACKEND == "api":
+        ok, reason = validate_short(str(video_path))
+        if not ok:
+            log.error("YouTube upload skipped: %s", reason)
+            return False, ""
+        from ttclips import youtube_api
+        return youtube_api.upload_short(
+            str(video_path), " ".join(str(title or "").split()), str(description or ""),
+            tags=tags, visibility=visibility or VISIBILITY,
+            made_for_kids=made_for_kids or MADE_FOR_KIDS, category_id=CATEGORY_ID,
+            retries=max(RETRIES, 3))
     _validate_cookies()
     video_path = str(video_path)
     title = " ".join(str(title or "").split())
@@ -617,7 +632,10 @@ def upload_short(video_path: str, title: str, description: str, *,
 
 
 def validate_session() -> bool:
-    """Check that the YouTube cookie session is usable. True when signed in."""
+    """Check that the YouTube session (cookies or API token) is usable."""
+    if BACKEND == "api":
+        from ttclips import youtube_api
+        return youtube_api.validate_session()
     _validate_cookies()
     try:
         from playwright.sync_api import sync_playwright
@@ -746,7 +764,9 @@ def main() -> None:
     parser.add_argument("--probe-stage", action="store_true",
                         help="With --probe, also select the file (starts a draft upload, never posts)")
     parser.add_argument("--validate-session", action="store_true",
-                        help="Check whether the YouTube cookie session is alive")
+                        help="Check whether the YouTube session (cookies or API token) is alive")
+    parser.add_argument("--auth", action="store_true",
+                        help="API backend: run the one-time OAuth consent flow and save the token")
     args = parser.parse_args()
 
     if not logging.getLogger().handlers:
@@ -754,6 +774,15 @@ def main() -> None:
             level=logging.INFO,
             format="%(asctime)s  %(levelname)-7s %(name)s  %(message)s",
         )
+
+    if args.auth:
+        from ttclips import youtube_api
+        try:
+            youtube_api.get_credentials(interactive=True)
+        except youtube_api.YouTubeAPIError as e:
+            log.error("%s", e)
+            sys.exit(1)
+        sys.exit(0 if youtube_api.validate_session() else 1)
 
     if args.validate_session:
         try:

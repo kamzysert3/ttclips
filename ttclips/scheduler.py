@@ -8,12 +8,16 @@ Usage:
     ttclips --dry-run                   # same as normal but skip upload
     ttclips --init --yes                # scaffold config/ + .env.example in $TTCLIPS_HOME
     ttclips --target youtube            # post to YouTube Shorts instead of TikTok
+    ttclips --url <youtube|twitch|any video link or file>   # clip one specific video
+    ttclips --review                    # edit + approve each caption before uploading
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import logging
 import random
+import re
 import sys
 import time
 from datetime import datetime
@@ -24,15 +28,16 @@ from ttclips.config import (CLIPS_DIR, LOG_FILE, load_posting_window,
                             load_tiktok_config, load_youtube_config)
 from ttclips.broll import pick_background
 from ttclips.clipper import transcribe, rank_highlights
-from ttclips.downloader import download
+from ttclips.downloader import download, probe_source
 from ttclips.encoder import cut_and_crop_clip, make_generated_clip
 from ttclips.generator import generate_original
 from ttclips.monitor import refresh_feeds
 from ttclips.platforms import PLATFORMS, configured_targets, resolve_targets
+from ttclips.review import SKIPPED, ReviewAbort, is_interactive, review_post
 from ttclips.scaffold import init_home, require_ownership_ack
 from ttclips.state import (PostRecord, add_post, load_posts, load_queue,
                            platform_of, remove_from_queue, slot_posted_today)
-from ttclips.uploader import upload_clip, validate_session
+from ttclips.uploader import publish_clip, validate_session
 from ttclips.youtube_uploader import (build_short_metadata, upload_short,
                                       validate_session as validate_youtube_session)
 
@@ -51,6 +56,9 @@ log = logging.getLogger("ttclips")
 
 HASHTAGS_DEFAULT = load_tiktok_config().get("default_hashtags", "#fyp #viral #funny #trending")
 YT_HASHTAGS_DEFAULT = load_youtube_config().get("default_hashtags", "#Shorts #fyp")
+
+# Set by --review: edit/approve every caption before it is uploaded.
+REVIEW = False
 
 
 def _resolve_targets(override: str = "") -> list[str]:
@@ -157,6 +165,20 @@ def _pending_sources(queue: list[dict], posts: list[dict], targets: list[str]) -
     return pending
 
 
+def _tiktok_caption(title: str, hashtags: str) -> str:
+    """TikTok caption; an empty hashtag line (cleared in review) adds none."""
+    return f"{title}\n\n{hashtags}" if hashtags else title
+
+
+def _caption_preview(platform: str, title: str, hashtags: str, source_url: str = "") -> str:
+    """Exactly what will be posted, for the review prompt."""
+    if platform == "youtube":
+        meta = build_short_metadata(title, hashtags, source_url=source_url)
+        return f"Title:       {meta['title']}\nDescription: " + \
+            meta["description"].replace("\n", "\n             ")
+    return _tiktok_caption(title, hashtags)
+
+
 def _publish(platform: str, clip_path: Path, *, title: str, hashtags: str,
              source_url: str = "", kind: str = "repost", channel: str = "",
              clip_start: float = 0.0, clip_end: float = 0.0,
@@ -164,20 +186,33 @@ def _publish(platform: str, clip_path: Path, *, title: str, hashtags: str,
     """Upload one rendered clip to *platform* and record it in the state file.
 
     Returns ``(success, remote_id)``. Upload errors are logged and reported
-    as a failure — one platform failing never aborts the whole run.
+    as a failure — one platform failing never aborts the whole run. With
+    ``--review`` the user edits/approves the caption first; a skipped upload
+    returns ``(False, SKIPPED)``.
     """
+    if REVIEW:
+        reviewed = review_post(
+            platform, title, hashtags, clip_path,
+            preview=lambda t, h: _caption_preview(platform, t, h, source_url),
+            duration=(clip_end - clip_start) if clip_end > clip_start else None,
+        )
+        if reviewed is None:
+            return False, SKIPPED
+        title, hashtags = reviewed
     remote_id = ""
     caption = ""
     try:
         if platform == "youtube":
             meta = build_short_metadata(title, hashtags, source_url=source_url)
             log.info("Uploading to YouTube Shorts: %s", meta["title"])
-            ok, remote_id = upload_short(str(clip_path), meta["title"], meta["description"])
+            ok, remote_id = upload_short(str(clip_path), meta["title"], meta["description"],
+                                         tags=meta["tags"])
             caption = meta["description"]
         else:
-            caption = _format_caption(title, hashtags)
+            caption = _tiktok_caption(title, hashtags)
             log.info("Uploading to TikTok ...")
-            ok = upload_clip(str(clip_path), caption)
+            ok, remote_id = publish_clip(str(clip_path), caption,
+                                         is_aigc=(kind == "generated"))
     except Exception as e:
         log.error("Upload to %s failed: %s", platform, e)
         return False, ""
@@ -221,128 +256,159 @@ def _do_repost(slot_time: str, *, dry_run: bool = False, render_only: bool = Fal
         log.info("All queued videos have been reposted")
         return False
 
-    posted_any = False
     for item in candidates:
-        url = item["url"]
-        title = item.get("title", "clip")
+        result = _process_source(item, targets=targets, slot_time=slot_time, posts=posts,
+                                 dry_run=dry_run, render_only=render_only,
+                                 queue_platforms=queue_platforms)
+        if result is None:  # nothing left to post for this source; try the next
+            continue
+        return result
+    return False
+
+
+def _process_source(item: dict, *, targets: list[str], slot_time: str, posts: list[dict],
+                    dry_run: bool = False, render_only: bool = False,
+                    queue_platforms: list[str] | None = None) -> bool | None:
+    """Download, transcribe, rank, render and publish one source video.
+
+    ``item`` needs ``url`` and ``video_id``; ``local_path`` skips the
+    download. ``queue_platforms`` enables queue bookkeeping (``None`` for
+    ad-hoc ``--url`` runs, which never touch the queue). Returns ``None``
+    when every highlight is already posted on every target (nothing to do),
+    otherwise whether anything was posted/rendered.
+    """
+    url = item["url"]
+    title = item.get("title", "clip")
+    posted_any = False
+    if item.get("local_path"):
+        video_path = Path(item["local_path"])
+        log.info("Using local file %s", video_path)
+    else:
         log.info("Downloading %s — %s ...", item["video_id"], title)
         try:
-            video_path = download(url, filename_hint=item.get("channel", ""))
+            video_path = download(url, filename_hint=item.get("channel", ""),
+                                  cache_id=item.get("cache_id", ""))
         except Exception as e:
             log.error("Download failed: %s", e)
-            return posted_any
+            return False
 
-        log.info("Transcribing ...")
-        try:
-            segments = transcribe(video_path)
-        except Exception as e:
-            log.error("Transcription failed: %s", e)
-            return posted_any
-        if not segments:
-            log.warning("Empty transcription")
-            return posted_any
+    log.info("Transcribing ...")
+    try:
+        segments = transcribe(video_path)
+    except Exception as e:
+        log.error("Transcription failed: %s", e)
+        return False
+    if not segments:
+        log.warning("Empty transcription")
+        return False
 
-        log.info("Ranking highlights via Gemini ...")
-        num_clips = min(5, max(1, int(item.get("max_moments") or 1)))
-        try:
-            highlights = rank_highlights(segments, num_clips=num_clips,
-                                         cache_key=item["video_id"])
-        except Exception as e:
-            log.error("Highlight ranking failed: %s", e)
-            return posted_any
-        if not highlights:
-            log.warning("No highlights found in video")
-            return posted_any
+    log.info("Ranking highlights via Gemini ...")
+    num_clips = min(5, max(1, int(item.get("max_moments") or 1)))
+    try:
+        highlights = rank_highlights(segments, num_clips=num_clips,
+                                     cache_key=item["video_id"])
+    except Exception as e:
+        log.error("Highlight ranking failed: %s", e)
+        return False
+    if not highlights:
+        log.warning("No highlights found in video")
+        return False
 
-        # Which (clip, platform) pairs still need a post?
-        todo: list[tuple[dict, list[str]]] = []
-        for best in highlights:
-            missing = [p for p in targets if not _clip_posted(posts, url, best, p)]
-            if missing:
-                todo.append((best, missing))
-        if not todo:
-            # Every clip is already on every platform of this run. The source
-            # only leaves the queue once *all configured* platforms have it.
-            if all(_posted_count(posts, url, p) >= len(highlights) for p in queue_platforms):
-                log.info("Source %s is fully posted — dropping it from the queue",
-                         item["video_id"])
-                if not dry_run:
-                    remove_from_queue(url)
-            else:
-                log.info("Source %s still owes a post on %s — keeping it queued",
-                         item["video_id"],
-                         ", ".join(p for p in queue_platforms
-                                   if _posted_count(posts, url, p) < len(highlights)))
+    # Which (clip, platform) pairs still need a post?
+    todo: list[tuple[dict, list[str]]] = []
+    for best in highlights:
+        missing = [p for p in targets if not _clip_posted(posts, url, best, p)]
+        if missing:
+            todo.append((best, missing))
+    if not todo:
+        if queue_platforms is None:
+            log.info("Every highlight of %s is already posted to %s — nothing to do",
+                     item["video_id"], ", ".join(targets))
+        # Every clip is already on every platform of this run. The source
+        # only leaves the queue once *all configured* platforms have it.
+        elif all(_posted_count(posts, url, p) >= len(highlights) for p in queue_platforms):
+            log.info("Source %s is fully posted — dropping it from the queue",
+                     item["video_id"])
+            if not dry_run:
+                remove_from_queue(url)
+        else:
+            log.info("Source %s still owes a post on %s — keeping it queued",
+                     item["video_id"],
+                     ", ".join(p for p in queue_platforms
+                               if _posted_count(posts, url, p) < len(highlights)))
+        return None
+
+    for i, (best, missing) in enumerate(todo, start=1):
+        clip_name = f"{item['video_id']}_{int(best['start'])}_{int(best['end'])}.mp4"
+        clip_path = CLIPS_DIR / clip_name
+        clip_title = best.get("title", title)
+
+        if dry_run:
+            log.info("[DRY RUN] Would encode clip %d/%d %s (%.1fs–%.1fs, score %s)",
+                     i, len(todo), item["video_id"], best["start"], best["end"], best.get("score"))
+            for platform in missing:
+                log.info("[DRY RUN] %s caption: %s", platform,
+                         _format_caption(clip_title, _hashtags_for(platform, best.get("hashtags"))))
+            posted_any = True
             continue
 
-        for i, (best, missing) in enumerate(todo, start=1):
-            clip_name = f"{item['video_id']}_{int(best['start'])}_{int(best['end'])}.mp4"
-            clip_path = CLIPS_DIR / clip_name
-            clip_title = best.get("title", title)
+        log.info("Encoding clip %d/%d ...", i, len(todo))
+        try:
+            cut_and_crop_clip(
+                source=video_path,
+                clip_start=best["start"],
+                clip_end=best["end"],
+                segments=segments,
+                out=clip_path,
+                title=clip_title[:70],
+            )
+        except Exception as e:
+            log.error("Clip encoding failed (clip %d/%d): %s", i, len(todo), e)
+            continue
 
-            if dry_run:
-                log.info("[DRY RUN] Would encode clip %d/%d %s (%.1fs–%.1fs, score %s)",
-                         i, len(todo), item["video_id"], best["start"], best["end"], best.get("score"))
-                for platform in missing:
-                    log.info("[DRY RUN] %s caption: %s", platform,
-                             _format_caption(clip_title, _hashtags_for(platform, best.get("hashtags"))))
-                posted_any = True
-                continue
-
-            log.info("Encoding clip %d/%d ...", i, len(todo))
-            try:
-                cut_and_crop_clip(
-                    source=video_path,
-                    clip_start=best["start"],
-                    clip_end=best["end"],
-                    segments=segments,
-                    out=clip_path,
-                    title=clip_title[:70],
-                )
-            except Exception as e:
-                log.error("Clip encoding failed (clip %d/%d): %s", i, len(todo), e)
-                continue
-
-            if render_only:
-                log.info("[NO-UPLOAD] Clip %d/%d rendered (not posted): %s", i, len(todo), clip_path)
-                for platform in missing:
-                    log.info("[NO-UPLOAD] %s caption would be: %s", platform,
-                             _format_caption(clip_title, _hashtags_for(platform, best.get("hashtags"))))
-                posted_any = True
-                continue
-
+        if render_only:
+            log.info("[NO-UPLOAD] Clip %d/%d rendered (not posted): %s", i, len(todo), clip_path)
             for platform in missing:
-                ok, remote_id = _publish(
-                    platform, clip_path,
-                    title=clip_title,
-                    hashtags=_hashtags_for(platform, best.get("hashtags")),
-                    source_url=url,
-                    kind="repost",
-                    channel=item.get("channel", ""),
-                    clip_start=best["start"],
-                    clip_end=best["end"],
-                    slot=slot_time,
-                )
-                if ok:
-                    posts.append({
-                        "kind": "repost", "source_url": url,
-                        "clip_start": best["start"], "clip_end": best["end"],
-                        "platform": platform, "remote_id": remote_id,
-                    })
-                    log.info("Reposted clip %d/%d to %s: %s (slot %s)", i, len(todo),
-                             platform, (clip_title or title)[:50], slot_time)
-                    posted_any = True
-                    if platform != missing[-1]:
-                        _human_delay()
-                else:
-                    log.error("Upload to %s failed for clip %d/%d", platform, i, len(todo))
+                log.info("[NO-UPLOAD] %s caption would be: %s", platform,
+                         _format_caption(clip_title, _hashtags_for(platform, best.get("hashtags"))))
+            posted_any = True
+            continue
 
-        # Drop the source from the queue once every clip is on every
-        # configured platform (a run for a single platform never evicts a
-        # source that another platform still owes).
-        if all(_posted_count(posts, url, platform) >= len(highlights) for platform in queue_platforms):
-            remove_from_queue(url)
-        return posted_any
+        for platform in missing:
+            ok, remote_id = _publish(
+                platform, clip_path,
+                title=clip_title,
+                hashtags=_hashtags_for(platform, best.get("hashtags")),
+                source_url=url,
+                kind="repost",
+                channel=item.get("channel", ""),
+                clip_start=best["start"],
+                clip_end=best["end"],
+                slot=slot_time,
+            )
+            if ok:
+                posts.append({
+                    "kind": "repost", "source_url": url,
+                    "clip_start": best["start"], "clip_end": best["end"],
+                    "platform": platform, "remote_id": remote_id,
+                })
+                log.info("Reposted clip %d/%d to %s: %s (slot %s)", i, len(todo),
+                         platform, (clip_title or title)[:50], slot_time)
+                posted_any = True
+                if platform != missing[-1]:
+                    _human_delay()
+            elif remote_id == SKIPPED:
+                log.info("Skipped %s for clip %d/%d (review)", platform, i, len(todo))
+            else:
+                log.error("Upload to %s failed for clip %d/%d", platform, i, len(todo))
+
+    # Drop the source from the queue once every clip is on every
+    # configured platform (a run for a single platform never evicts a
+    # source that another platform still owes).
+    if queue_platforms is not None and all(
+            _posted_count(posts, url, platform) >= len(highlights)
+            for platform in queue_platforms):
+        remove_from_queue(url)
     return posted_any
 
 
@@ -509,38 +575,56 @@ def run_post_file(video_path: str, caption: str = "", target: str = "") -> bool:
         log.error("Video not found: %s", path)
         return False
     targets = _resolve_targets(target)
-    title = path.stem.replace("_", " ").strip()
+    title = caption or path.stem.replace("_", " ").strip()
     posted_any = False
     for platform in targets:
-        try:
-            if platform == "youtube":
-                meta = build_short_metadata(caption or title,
-                                            _hashtags_for("youtube", ""))
-                log.info("Posting file directly to YouTube Shorts: %s", path)
-                ok, remote_id = upload_short(str(path), meta["title"], meta["description"])
-                used_caption = meta["description"]
-            else:
-                used_caption = caption or _format_caption(title, _hashtags_for("tiktok", ""))
-                log.info("Posting file directly (no pipeline): %s", path)
-                ok = upload_clip(str(path), used_caption)
-                remote_id = ""
-        except Exception as e:
-            log.error("Upload to %s failed: %s", platform, e)
-            continue
+        # An explicit TikTok --caption is used verbatim; YouTube always gets
+        # its default hashtags (title/description are separate fields there).
+        hashtags = "" if (caption and platform == "tiktok") else _hashtags_for(platform, "")
+        log.info("Posting file directly to %s: %s", platform, path)
+        ok, remote_id = _publish(platform, path, title=title, hashtags=hashtags,
+                                 kind="manual", slot="manual")
         if ok:
-            add_post(PostRecord(
-                kind="manual",
-                title=used_caption[:100],
-                file_path=str(path),
-                caption=used_caption,
-                slot="manual",
-                posted_at=datetime.now().isoformat(timespec="seconds"),
-                platform=platform,
-                remote_id=remote_id,
-            ))
             log.info("Posted file directly to %s: %s", platform, path)
             posted_any = True
     return posted_any
+
+
+def run_url(source: str, *, targets: list[str] | None = None, num_clips: int = 1,
+            dry_run: bool = False, render_only: bool = False) -> bool:
+    """Clip one specific video instead of the monitored queue (``--url``).
+
+    *source* is a YouTube/Twitch/any yt-dlp-supported link, or a local video
+    file. The queue is never touched; per-platform dedup still applies, so
+    re-running the same link only posts highlights that are not up yet.
+    """
+    targets = targets or _resolve_targets()
+    local = Path(source).expanduser()
+    if local.is_file():
+        stem = re.sub(r"[^A-Za-z0-9_-]+", "_", local.stem).strip("_")[:60] or "local"
+        digest = hashlib.sha1(str(local.resolve()).encode()).hexdigest()[:8]
+        item = {"url": local.resolve().as_uri(), "video_id": f"local_{stem}_{digest}",
+                "title": local.stem.replace("_", " "), "channel": "local",
+                "local_path": str(local)}
+    else:
+        if not re.match(r"^https?://", source.strip(), re.I):
+            log.error("--url needs an http(s) link or an existing video file: %s", source)
+            return False
+        try:
+            item = probe_source(source.strip())
+        except ValueError as e:
+            log.error("%s", e)
+            return False
+        if item["duration"] > 3 * 3600:
+            log.warning("This video is %.1f hours long — downloading and transcribing it "
+                        "will take a while.", item["duration"] / 3600)
+    item["max_moments"] = min(5, max(1, int(num_clips)))
+    log.info("Clipping %s (%s) — %d clip(s) -> %s", item["title"], item["channel"],
+             item["max_moments"], ", ".join(targets))
+    log.info("Reminder: only post content you own or have rights to (docs/LEGAL.md).")
+    result = _process_source(item, targets=targets, slot_time="manual", posts=load_posts(),
+                             dry_run=dry_run, render_only=render_only, queue_platforms=None)
+    return bool(result)
 
 
 def _human_delay():
@@ -569,9 +653,32 @@ def main() -> None:
                         help="Upload an already-generated clip (skips the full pipeline)")
     parser.add_argument("--caption", type=str, default="",
                         help="Caption override for --post-file (defaults to a title derived from the filename)")
+    parser.add_argument("--url", type=str, default="", metavar="LINK",
+                        help="Clip this video instead of the monitored channels: a YouTube, "
+                             "Twitch (VOD/clip) or any yt-dlp-supported link, or a local video file")
+    parser.add_argument("--clips", type=int, default=1, metavar="N",
+                        help="With --url: number of highlight clips to cut (1-5, default 1)")
+    parser.add_argument("--review", action="store_true",
+                        help="Show each caption before uploading so you can edit it; "
+                             "press Enter to upload (needs an interactive terminal)")
     parser.add_argument("--validate-session", action="store_true", help="Check if TikTok cookie session is alive")
     parser.add_argument("--validate-youtube", action="store_true", help="Check if the YouTube cookie session is alive")
     args = parser.parse_args()
+    try:
+        _run(args)
+    except ReviewAbort:
+        log.info("Stopped from the review prompt — nothing else will be posted.")
+        sys.exit(130)
+
+
+def _run(args) -> None:
+    global REVIEW
+    if args.review:
+        if not is_interactive():
+            log.error("--review needs an interactive terminal (it waits for you to press "
+                      "Enter); drop it for scheduled/unattended runs.")
+            sys.exit(2)
+        REVIEW = True
 
     if args.init:
         if not require_ownership_ack(args.yes):
@@ -602,6 +709,11 @@ def main() -> None:
 
     if args.post_file:
         ok = run_post_file(args.post_file, args.caption, args.target)
+        sys.exit(0 if ok else 1)
+
+    if args.url:
+        ok = run_url(args.url, targets=_resolve_targets(args.target) if args.target else None,
+                     num_clips=args.clips, dry_run=args.dry_run, render_only=args.no_upload)
         sys.exit(0 if ok else 1)
 
     if args.monitor:

@@ -13,3 +13,9 @@ data/cache/
 dist/
 build/
 *.egg-info/
+# YouTube Data API credentials (never commit)
+config/client_secret*.json
+data/youtube_token.json
+data/tiktok_token.json
+data/.state.lock
+data/*.corrupt-*

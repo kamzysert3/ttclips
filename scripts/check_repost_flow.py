@@ -32,7 +32,7 @@ uploads: list[tuple[str, str]] = []
 fail_for: set[str] = set()
 
 
-def fake_download(url, *, filename_hint=""):
+def fake_download(url, *, filename_hint="", cache_id=""):
     path = TMP / "data" / "downloads" / "vid123.mp4"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"fake")
@@ -58,6 +58,10 @@ def fake_upload_clip(video_path, caption, *, cookies=""):
     return True
 
 
+def fake_publish_clip(video_path, caption, **kw):
+    return fake_upload_clip(video_path, caption), ""
+
+
 def fake_upload_short(video_path, title, description, **kw):
     uploads.append(("youtube", title))
     if "youtube" in fail_for:
@@ -69,7 +73,7 @@ sched.download = fake_download
 sched.transcribe = fake_transcribe
 sched.rank_highlights = fake_rank
 sched.cut_and_crop_clip = fake_cut
-sched.upload_clip = fake_upload_clip
+sched.publish_clip = fake_publish_clip
 sched.upload_short = fake_upload_short
 
 failures: list[str] = []

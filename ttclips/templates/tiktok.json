@@ -1,5 +1,6 @@
 {
-  "_comment": "TikTok browser-automation posting settings. Cookies come from exporting your logged-in browser session (Netscape format) to data/cookies.txt - see scripts/setup.ps1 step 6. headless: TikTok's bot detection is stricter; keep false for reliable posting. upload_timeout_sec: seconds allowed for page loads during upload (homepage/auth + upload page); raise it if the heavy TikTok pages load slowly. user_agent: keep this a recent desktop Chrome UA - the library default (Chrome 58) gets connection-reset by TikTok's WAF. retry_wait_*: exponential backoff applied between upload attempts after each failure.",
+  "_comment": "TikTok browser-automation posting settings. Cookies come from exporting your logged-in browser session (Netscape format) to data/cookies.txt - see scripts/setup.ps1 step 6. headless: TikTok's bot detection is stricter; keep false for reliable posting. upload_timeout_sec: seconds allowed for page loads during upload (homepage/auth + upload page); raise it if the heavy TikTok pages load slowly. user_agent: keep this a recent desktop Chrome UA - the library default (Chrome 58) gets connection-reset by TikTok's WAF. retry_wait_*: exponential backoff applied between upload attempts after each failure. backend: 'browser' (default, Playwright + cookies) or 'api' (official Content Posting API - set TIKTOK_CLIENT_KEY/TIKTOK_CLIENT_SECRET in .env, register redirect URI http://localhost:*/callback/ on your TikTok app, then run ttclips-upload --auth once). api.api_mode: 'inbox' (draft lands in your TikTok inbox, you tap publish - no audit needed) or 'direct' (posts straight away; unaudited apps can only post SELF_ONLY to a private account). api.privacy_level: optional override (PUBLIC_TO_EVERYONE|MUTUAL_FOLLOW_FRIENDS|FOLLOWER_OF_CREATOR|SELF_ONLY); default follows visibility, and falls back to SELF_ONLY if the account does not allow it. AI-generated clips are labelled is_aigc automatically in direct mode.",
+  "backend": "browser",
   "browser": "chrome",
   "headless": false,
   "min_action_delay_sec": 6,
@@ -12,5 +13,15 @@
   "retry_wait_max_sec": 300,
   "visibility": "everyone",
   "default_hashtags": "#fyp #viral #funny #trending",
-  "caption_template": "{title}\n\n{hashtags}"
+  "caption_template": "{title}\n\n{hashtags}",
+  "api": {
+    "api_mode": "inbox",
+    "privacy_level": "",
+    "disable_comment": false,
+    "disable_duet": false,
+    "disable_stitch": false,
+    "chunk_size_mb": 10,
+    "status_timeout_sec": 300,
+    "token_file": "data/tiktok_token.json"
+  }
 }
