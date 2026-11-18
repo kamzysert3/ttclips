@@ -1,2 +1,4 @@
-theme: jekyll-theme-minimal
 title: ttclips
+description: Turn your own YouTube channel into TikTok clips and YouTube Shorts, automatically.
+theme: jekyll-theme-minimal
+show_downloads: false

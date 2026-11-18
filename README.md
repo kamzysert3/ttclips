@@ -710,6 +710,10 @@ The release pipeline verifies the tag matches the version in both
 
 ## Legal & operational notes
 
+- **Terms & privacy:** <https://kamzysert3.github.io/ttclips/terms.html> ·
+  <https://kamzysert3.github.io/ttclips/privacy.html> — ttclips runs locally and
+  the project operates no server; those pages spell out what stays on your
+  machine and what goes to TikTok, Google or Pexels.
 - **Own your content:** ttclips is a repurposing tool — configure only channels
   you own or have rights to repost. `ttclips --init --yes` records that
   acknowledgement. Clipping channels without permission can violate YouTube ToS

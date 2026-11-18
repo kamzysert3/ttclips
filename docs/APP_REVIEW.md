@@ -77,34 +77,27 @@ visible on screen at some point.
 
 ## 4. Terms & privacy URLs
 
-The form rejects blank URLs, and reviewers do open them. Two options:
+The form rejects blank URLs, and reviewers do open them. The pages are written
+and committed: `docs/terms.md`, `docs/privacy.md`, `docs/_config.yml`.
 
-**A. GitHub Pages (recommended)** — enable Pages on `kamzysert3/ttclips`
-(branch `main`, folder `/docs`), then commit `docs/terms.md` + `docs/privacy.md`
-and use:
+1. Push `main`.
+2. GitHub → **Settings → Pages** → Source: *Deploy from a branch* → Branch
+   `main`, folder `/docs` → Save.
+3. Wait for the build, then open both URLs in an **incognito** window before
+   submitting:
 
 ```
 https://kamzysert3.github.io/ttclips/terms.html
 https://kamzysert3.github.io/ttclips/privacy.html
 ```
 
-Enable Pages → source `main` → `/docs`. A `_config.yml` with
-`theme: jekyll-theme-minimal` renders the markdown to HTML at `.html` paths.
+Jekyll renders each `.md` to `.html` with `jekyll-theme-minimal`; no extra
+build step is needed. If you later host on a custom domain, update both URLs in
+the portal **and** the links in `README.md`.
 
-**B. Raw GitHub links (weaker)** — `docs/LEGAL.md` exists but is not a
-ToS/privacy policy, and `github.com/.../blob/...` links have been rejected
-before as "not an official policy page". Only use these if A is impossible.
-
-What the privacy policy must say for this app to pass review:
-
-- data processed: OAuth tokens, the video files the user selects, the TikTok
-  username returned by `user.info.basic`
-- where it is stored: `data/tiktok_token.json` and `data/clips/` **on the
-  user's own machine** — there is no ttclips server
-- who it is sent to: TikTok's API only (plus Gemini/Pexels if the user enabled
-  those features — those are unrelated to the TikTok integration)
-- retention: tokens until deleted / refresh, clips until the user deletes them
-- contact email + "last updated" date
+Fallback if Pages is unavailable: the `github.com/.../blob/main/docs/...`
+links work but have been rejected before as "not an official policy page".
+`docs/LEGAL.md` is neither a ToS nor a privacy policy — do not submit it.
 
 ---
 
