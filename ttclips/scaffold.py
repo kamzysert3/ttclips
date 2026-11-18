@@ -17,7 +17,7 @@ from ttclips.config import HOME
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
 CONFIG_FILES = ("channels.json", "posting_window.json", "tiktok.json",
-                "youtube.json", "platforms.json")
+                "youtube.json", "platforms.json", "streams.json")
 
 OWNERSHIP_NOTICE = (
     "ttclips posts content to TikTok and YouTube Shorts automatically. Only "

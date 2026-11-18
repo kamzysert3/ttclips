@@ -10,6 +10,8 @@ Usage:
     ttclips --target youtube            # post to YouTube Shorts instead of TikTok
     ttclips --url <youtube|twitch|any video link or file>   # clip one specific video
     ttclips --review                    # edit + approve each caption before uploading
+    ttclips --streams                   # discover topic streams (config/streams.json)
+    ttclips --approve-streamer NAME     # allow a streamer + queue their pending items
 """
 from __future__ import annotations
 
@@ -29,12 +31,14 @@ from ttclips.config import (CLIPS_DIR, LOG_FILE, load_posting_window,
 from ttclips.broll import pick_background
 from ttclips.clipper import transcribe, rank_highlights
 from ttclips.downloader import download, probe_source
-from ttclips.encoder import cut_and_crop_clip, make_generated_clip
+from ttclips.encoder import cut_and_crop_clip, make_generated_clip, probe_duration
 from ttclips.generator import generate_original
 from ttclips.monitor import refresh_feeds
 from ttclips.platforms import PLATFORMS, configured_targets, resolve_targets
 from ttclips.review import SKIPPED, ReviewAbort, is_interactive, review_post
 from ttclips.scaffold import init_home, require_ownership_ack
+from ttclips.streams import (approve_streamer, candidates_summary, load_streams_config,
+                             refresh_streams)
 from ttclips.state import (PostRecord, add_post, load_posts, load_queue,
                            platform_of, remove_from_queue, slot_posted_today)
 from ttclips.uploader import publish_clip, validate_session
@@ -266,6 +270,18 @@ def _do_repost(slot_time: str, *, dry_run: bool = False, render_only: bool = Fal
     return False
 
 
+def _whole_highlight(item: dict, video_path: Path, segments: list[dict]) -> dict:
+    """A highlight spanning the entire (already short) source video."""
+    try:
+        duration = probe_duration(video_path)
+    except Exception:
+        duration = 0.0
+    if duration <= 0:
+        duration = float(item.get("duration") or 0) or (segments[-1]["end"] if segments else 0.0)
+    return {"start": 0.0, "end": round(float(duration), 2), "score": 0,
+            "title": item.get("title", "clip"), "hashtags": list(item.get("hashtags") or [])}
+
+
 def _process_source(item: dict, *, targets: list[str], slot_time: str, posts: list[dict],
                     dry_run: bool = False, render_only: bool = False,
                     queue_platforms: list[str] | None = None) -> bool | None:
@@ -294,27 +310,39 @@ def _process_source(item: dict, *, targets: list[str], slot_time: str, posts: li
             # (age-gated, private, removed) can't block every repost slot.
             return None if queue_platforms is not None else False
 
+    whole = bool(item.get("whole"))
     log.info("Transcribing ...")
     try:
         segments = transcribe(video_path)
     except Exception as e:
         log.error("Transcription failed: %s", e)
         return False
-    if not segments:
+    if not segments and not whole:
         log.warning("Empty transcription")
         return False
 
-    log.info("Ranking highlights via Gemini ...")
-    num_clips = min(5, max(1, int(item.get("max_moments") or 1)))
-    try:
-        highlights = rank_highlights(segments, num_clips=num_clips,
-                                     cache_key=item["video_id"])
-    except Exception as e:
-        log.error("Highlight ranking failed: %s", e)
-        return False
-    if not highlights:
-        log.warning("No highlights found in video")
-        return False
+    if whole:
+        # Already a short clip (e.g. a Twitch clip): post all of it, no ranking.
+        highlights = [_whole_highlight(item, video_path, segments)]
+        if highlights[0]["end"] <= 0:
+            log.error("Could not determine the length of %s", video_path)
+            return False
+    else:
+        log.info("Ranking highlights via Gemini ...")
+        num_clips = min(5, max(1, int(item.get("max_moments") or 1)))
+        try:
+            highlights = rank_highlights(segments, num_clips=num_clips,
+                                         cache_key=item["video_id"])
+        except Exception as e:
+            log.error("Highlight ranking failed: %s", e)
+            return False
+        if not highlights:
+            log.warning("No highlights found in video")
+            return False
+        if item.get("hashtags"):
+            # Topic hashtags (stream discovery) lead; Gemini's fill the rest.
+            highlights = [dict(h, hashtags=list(item["hashtags"]) + list(h.get("hashtags") or []))
+                          for h in highlights]
 
     # Which (clip, platform) pairs still need a post?
     todo: list[tuple[dict, list[str]]] = []
@@ -519,8 +547,11 @@ def _missed_slots(targets: list[str] | None = None) -> list[dict]:
 # ---------------------------------------------------------------- main
 def run_monitor() -> int:
     added = refresh_feeds()
-    log.info("Monitor complete — %d new videos added", len(added))
-    return len(added)
+    total = len(added)
+    if load_streams_config().get("enabled"):
+        total += len(refresh_streams()["queued"])
+    log.info("Monitor complete — %d new videos added", total)
+    return total
 
 
 def run_post(target_slot: dict | None = None, *, dry_run: bool = False,
@@ -641,7 +672,7 @@ def main() -> None:
                         help="Acknowledge you own (or have rights to) the content you will repost "
                              "(required for --init)")
     parser.add_argument("--version", action="version", version=f"ttclips {__version__}")
-    parser.add_argument("--monitor", action="store_true", help="Refresh YouTube feed queue only")
+    parser.add_argument("--monitor", action="store_true", help="Refresh the queue only (YouTube feeds + stream topics when enabled)")
     parser.add_argument("--catchup", action="store_true", help="Post all missed slots for today")
     parser.add_argument("--once",    action="store_true", help="Post the current/upcoming slot then exit")
     parser.add_argument("--slot",    type=str, default="", help="Override target slot time HH:MM (e.g. 12:00)")
@@ -663,6 +694,13 @@ def main() -> None:
     parser.add_argument("--review", action="store_true",
                         help="Show each caption before uploading so you can edit it; "
                              "press Enter to upload (needs an interactive terminal)")
+    parser.add_argument("--streams", action="store_true",
+                        help="Discover topic streams (config/streams.json) and queue allowed ones")
+    parser.add_argument("--stream-candidates", action="store_true",
+                        help="List discovered streamers waiting for approval")
+    parser.add_argument("--approve-streamer", type=str, default="", metavar="NAME",
+                        help="Allow a streamer (you have rights to their content) and queue "
+                             "their pending stream items")
     parser.add_argument("--validate-session", action="store_true", help="Check if TikTok cookie session is alive")
     parser.add_argument("--validate-youtube", action="store_true", help="Check if the YouTube cookie session is alive")
     args = parser.parse_args()
@@ -720,6 +758,26 @@ def _run(args) -> None:
 
     if args.monitor:
         run_monitor()
+        sys.exit(0)
+
+    if args.streams:
+        if not load_streams_config().get("enabled"):
+            log.error("Stream discovery is off — set \"enabled\": true in config/streams.json")
+            sys.exit(1)
+        result = refresh_streams()
+        log.info("Streams: %d queued, %d new candidate(s) awaiting approval",
+                 len(result["queued"]), result["candidates"])
+        sys.exit(0)
+
+    if args.stream_candidates:
+        lines = candidates_summary()
+        print("\n".join(lines) if lines else "No stream candidates waiting for approval.")
+        sys.exit(0)
+
+    if args.approve_streamer:
+        log.info("Reminder: only approve streamers whose content you have rights to repost "
+                 "(docs/LEGAL.md).")
+        approve_streamer(args.approve_streamer)
         sys.exit(0)
 
     # Auto-refresh queue if empty

@@ -52,6 +52,7 @@ creators, not a content scraper (see
   - [Platforms (`config/platforms.json`)](#platforms)
   - [TikTok upload settings (`config/tiktok.json`)](#tiktok-upload-settings)
   - [YouTube Shorts settings (`config/youtube.json`)](#youtube-upload-settings)
+  - [Stream topics (`config/streams.json`)](#stream-topics)
   - [Environment variables (`.env`)](#environment-variables)
 - [State and data](#state-and-data)
 - [Automation (Windows Task Scheduler)](#automation)
@@ -252,6 +253,9 @@ Default posting schedule (`config/posting_window.json`):
 | `ttclips --post-file <path> --caption "..."` | ...with a custom caption |
 | `ttclips --url <link>` | Clip one specific video instead of the monitored channels: a YouTube or Twitch (VOD/clip) link, anything yt-dlp supports, or a local video file |
 | `ttclips --url <link> --clips 3` | ...cut the top 3 highlights (1–5) |
+| `ttclips --streams` | Discover streams for the topics in `config/streams.json` and queue allowlisted ones |
+| `ttclips --stream-candidates` | List discovered streamers waiting for approval |
+| `ttclips --approve-streamer NAME` | Allowlist a streamer and queue their pending clips/VODs |
 | `ttclips --review` | Before each upload, edit the caption and press Enter to post (works with every posting command) |
 | `ttclips-upload --auth` | TikTok API backend: one-time sign-in |
 | `ttclips-youtube --auth` | YouTube API backend: one-time sign-in |
@@ -471,6 +475,59 @@ resumable uploads with automatic retry on 429/5xx errors.
 > every video it uploads is locked to **private**. ttclips logs a warning when
 > this happens. Use the `studio` backend until the audit is approved.
 
+<a id="stream-topics"></a>
+### Stream topics (`config/streams.json`)
+
+Follow a *topic* (a game, an event) across Twitch and YouTube instead of a
+fixed list of channels. When `"enabled": true`, every `--monitor` run (and
+`--streams`) looks for:
+
+- **Twitch clips** in the topic's category from the last `lookback_hours`,
+  most viewed first. Viewers already picked the moment, so each clip is
+  reframed, captioned and posted **whole**, with no Gemini ranking.
+- **Finished streams**: Twitch archive VODs in the category and YouTube live
+  broadcasts that have ended. These go through the normal highlight pipeline
+  (`max_moments` clips each). Streams that are still live are skipped until
+  they end, and VODs longer than `max_vod_hours` are skipped.
+
+```json
+{
+  "enabled": true,
+  "require_allowlist": true,
+  "allowed_streamers": ["your_twitch_login", "UCyourYouTubeChannelId"],
+  "max_vod_hours": 4,
+  "topics": [{
+    "name": "GTA6",
+    "twitch_category": "Grand Theft Auto VI",
+    "youtube_query": "GTA 6",
+    "modes": ["clips", "vods"],
+    "language": "en",
+    "lookback_hours": 24,
+    "min_clip_views": 200,
+    "min_vod_views": 500,
+    "max_moments": 2,
+    "max_queue_per_run": 3,
+    "hashtags": ["gta6", "gaming"]
+  }]
+}
+```
+
+**Allowlist (rights guardrail).** Only streamers listed in
+`allowed_streamers` (Twitch login/display name, YouTube channel title or id,
+case-insensitive) are queued. Everything else goes to
+`data/stream_candidates.json`. List those with `ttclips --stream-candidates`,
+and once you have permission from a streamer, run
+`ttclips --approve-streamer NAME`. That adds them to the allowlist and queues
+their pending items. Set `"require_allowlist": false` only if you have rights
+to everything in the category.
+
+Credentials go in `.env`, and a platform without them is skipped:
+`TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET` (a free app at
+<https://dev.twitch.tv/console>), and `YOUTUBE_API_KEY` (a YouTube Data API
+v3 key; each topic search uses about 101 of the 10,000 free daily quota
+units). Topic hashtags lead each caption, and Gemini's or the platform
+defaults fill the rest.
+
 ### Environment variables (`.env`)
 
 | Variable | Default | Purpose |
@@ -486,6 +543,8 @@ resumable uploads with automatic retry on 429/5xx errors.
 | `WHISPER_DEVICE` | `auto` | Compute device |
 | `TTS_VOICE` | `en-US-AvaNeural` | edge-tts narration voice |
 | `PEXELS_API_KEY` | — | Optional stock b-roll background source |
+| `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` | — | [Stream topics](#stream-topics): Twitch clips + VODs |
+| `YOUTUBE_API_KEY` | — | [Stream topics](#stream-topics): finished YouTube live streams |
 | `FFMPEG_BIN` / `FFPROBE_BIN` | — | Optional explicit binary paths |
 | `COOKIES_FILE` | `data/cookies.txt` | TikTok session cookies (Netscape format) |
 | `YOUTUBE_COOKIES_FILE` | `data/youtube_cookies.txt` | Google session cookies (Netscape format) |
@@ -537,6 +596,7 @@ Preview the look without posting: `ttclips --no-upload` (or
 | Path | Content |
 |------|---------|
 | `data/queue.json` | Discovered videos awaiting processing |
+| `data/stream_candidates.json` | Discovered stream items from streamers not yet approved |
 | `data/posted.json` | Post history / dedup, per platform (never reposts the same moment twice) |
 | `data/cookies.txt` | TikTok session cookies (git-ignored) |
 | `data/youtube_cookies.txt` | Google session cookies (git-ignored) |

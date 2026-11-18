@@ -96,6 +96,13 @@ class QueueItem:
     video_id: str
     max_moments: int = 1
     discovered_at: str = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
+    # Stream discovery (ttclips.streams); RSS items keep the defaults.
+    source: str = "youtube_rss"  # "youtube_rss" | "twitch_clip" | "twitch_vod" | "youtube_vod"
+    whole: bool = False  # post the whole video as one clip (no highlight ranking)
+    hashtags: list = field(default_factory=list)  # topic hashtags merged into captions
+    cache_id: str = ""  # yt-dlp id, for download cache reuse on non-YouTube URLs
+    duration: float = 0.0
+    topic: str = ""
 
 
 def _quarantine(path: Path, reason: str) -> None:
