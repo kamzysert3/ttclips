@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kamzysert3/ttclips/main/assets/logo-dark.svg">
+    <img src="https://raw.githubusercontent.com/kamzysert3/ttclips/main/assets/logo.svg" alt="ttclips" width="440">
+  </picture>
+</p>
+
 # ttclips
 
 [![PyPI - Version](https://img.shields.io/pypi/v/ttclips.svg?logo=pypi&logoColor=white)](https://pypi.org/project/ttclips/)
@@ -8,7 +15,7 @@
 
 Turn **your own YouTube channel** into TikTok content automatically. ttclips
 monitors your channel(s), detects the highlight moments, cuts them into vertical
-9:16 clips with dead-center, word-synced karaoke captions, and posts them to
+9:16 clips with face-aware framing and punchy word-synced captions, and posts them to
 TikTok **and/or YouTube Shorts** on a schedule — no TikTok API approval, no
 Google Cloud project, no manual editing, fully local.
 
@@ -18,7 +25,10 @@ creators, not a content scraper (see
 
 - **Fully local and free** — no clip-hosting service, no paid APIs required.
 - **AI-ranked highlights** — whisper transcription + Gemini highlight ranking.
-- **Word-synced captions** — the active word is bold/highlighted in real time.
+- **Smart framing** — follows the speaker's face, or stacks facecam over
+  gameplay, instead of a blind centre crop.
+- **Short-form captions** — bold 2–3 word phrases in the platform-safe zone;
+  the spoken word pops in colour, plus a hook card on the opening seconds.
 - **Cookie-based auth** — no TikTok developer approval / API key needed.
 - **Official APIs when you want them** — optional TikTok Content Posting API
   and YouTube Data API v3 backends: no cookies, no brittle UI automation.
@@ -60,9 +70,9 @@ creators, not a content scraper (see
   match your keyword filters.
 - **Highlight detection** — `faster-whisper` transcribes the audio; Gemini
   ranks the strongest 20–70 second moments with hooks, captions and hashtags.
-- **Vertical clip production** — FFmpeg crops to 1080×1920 (9:16) and burns in
-  big, centered, word-synced captions that highlight each spoken word as it
-  happens.
+- **Vertical clip production** — each clip is reframed to 1080×1920 (9:16)
+  with face-aware framing, captioned, loudness-normalised and trimmed onto
+  word boundaries. See [Clip look](#clip-look).
 - **Original content mode** — Gemini writes a script, `edge-tts` narrates it,
   stock b-roll (Pexels) or an animated gradient backs the clip.
 - **Scheduled posting** — up to 8 posts/day at configurable times, with
@@ -195,7 +205,7 @@ YouTube RSS feeds ─────────────────▶ monitor
                                      ▼
                           Gemini (probe → fallback chain) highlight ranking
                                      ▼
-                          FFmpeg (crop 9:16 + centered karaoke captions)
+                          face-aware 9:16 framing + animated captions (FFmpeg)
                                      ▼
    two pipelines:    repost clips            OR        generated original clips
               Gemini highlights        Gemini script → edge-tts narration →
@@ -479,13 +489,48 @@ resumable uploads with automatic retry on 429/5xx errors.
 | `FFMPEG_BIN` / `FFPROBE_BIN` | — | Optional explicit binary paths |
 | `COOKIES_FILE` | `data/cookies.txt` | TikTok session cookies (Netscape format) |
 | `YOUTUBE_COOKIES_FILE` | `data/youtube_cookies.txt` | Google session cookies (Netscape format) |
-| `CAPTION_FONT_SIZE` | `96` | Caption size (pt) |
-| `CAPTION_ALIGNMENT` | `5` | ASS alignment (`5` = middle-center) |
-| `CAPTION_MARGINV` | `0` | Vertical margin |
-| `CAPTION_OUTLINE` / `CAPTION_SHADOW` | `3` / `2` | Outline/shadow width |
-| `CAPTION_WORDS_PER_LINE` | `6` | Max words per caption line |
-| `HIGHLIGHT_COLOUR` | `0000FFFF` | Active-word colour (ASS BGR, default yellow) |
-| `IDLE_COLOUR` | `00808080` | Rest-of-line colour (ASS BGR, light grey) |
+| `CLIP_LAYOUT` | `auto` | Framing: `auto`/`track`/`stack`/`blur`/`crop` — see [Clip look](#clip-look) |
+| `CLIP_FALLBACK_LAYOUT` | `crop` | What `auto` uses when no face is found (`crop`/`blur`) |
+| `STACK_SPLIT` | `0.36` | Share of the height given to the facecam in `stack` |
+| `CAPTION_STYLE` | `pop` | Caption preset: `pop`/`word`/`clean` |
+| `CAPTION_FONT` | `Montserrat Black` | Bundled font, or any font installed on the PC |
+| `CAPTION_FONT_SIZE` | `92` | Caption size |
+| `CAPTION_MAX_WORDS` | `3` | Words per caption phrase |
+| `CAPTION_MAX_LINE_CHARS` | `13` | Characters per line before wrapping/shrinking |
+| `CAPTION_Y` | `0.68` | Caption centre, `0` = top … `1` = bottom |
+| `CAPTION_UPPERCASE` / `CAPTION_HIGHLIGHT` | `1` / `1` | Uppercase text / colour the spoken word |
+| `CAPTION_WORD_POP` | `110` | % size of the spoken word (`100` = off) |
+| `CAPTION_COLOUR` / `HIGHLIGHT_COLOUR` / `CAPTION_OUTLINE_COLOUR` | `#FFFFFF` / `#FFE600` / `#000000` | Colours (`#RRGGBB`) |
+| `CAPTION_OUTLINE` / `CAPTION_SHADOW` | `7` / `3` | Outline/shadow width |
+| `HOOK_SECONDS` / `HOOK_Y` | `3.0` / `0.15` | Hook card duration (`0` = off) and position |
+| `SNAP_TO_WORDS` | `1` | Trim clip bounds onto word boundaries |
+| `AUDIO_NORMALIZE` | `1` | Loudness-normalise audio to −14 LUFS |
+| `VIDEO_CRF` / `VIDEO_PRESET` / `VIDEO_MAX_FPS` | `18` / `veryfast` / `60` | x264 quality, speed, frame-rate cap |
+
+### Clip look
+
+**Framing.** Landscape sources are analysed before they are cut (`ttclips/framing.py`). With `CLIP_LAYOUT=auto` each clip gets one of:
+
+| Layout | When `auto` picks it | Result |
+|---|---|---|
+| `track` | A face is on screen most of the time | 9:16 crop that follows the speaker — held still while they barely move, snapped (not slid) across scene cuts |
+| `stack` | A small face parked in a corner (facecam over gameplay) | Facecam on top, gameplay underneath, captions on the seam |
+| `crop` / `blur` | No steady face (`CLIP_FALLBACK_LAYOUT`) | Centre crop, or the whole picture over a blurred copy |
+
+Set `CLIP_LAYOUT` to one of those names to force it for every clip. Sources
+that are already vertical are left alone. Face detection uses OpenCV with a
+bundled YuNet model; if OpenCV is missing, clips fall back to the centre crop.
+
+**Captions.** Words are grouped into short phrases that break on pauses and
+punctuation, set in the bundled Montserrat Black, and placed at 68% of the
+frame height — below faces, above the platform's caption/button chrome. The
+spoken word is coloured and pops; phrases hold through small gaps and clear
+during real pauses. The clip title is shown as a hook card for the first
+seconds. Pick a preset with `CAPTION_STYLE` (`pop`, `word`, `clean`) and
+override any detail with the variables above.
+
+Preview the look without posting: `ttclips --no-upload` (or
+`ttclips --url <video> --no-upload`).
 
 ## State and data
 
@@ -585,7 +630,7 @@ cookies when the session expires (`ttclips --validate-youtube`).
 <details>
 <summary><b>Why does it need ffmpeg?</b></summary>
 
-ffmpeg merges YouTube video+audio streams, crops to 9:16, and burns in the
+ffmpeg merges YouTube video+audio streams, reframes to 9:16, and burns in the
 captions. `ffmpeg` plus `ffprobe` must resolve on `PATH` (or via
 `FFMPEG_BIN`/`FFPROBE_BIN`).
 </details>
