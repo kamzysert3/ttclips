@@ -34,10 +34,10 @@ See `ttclips/tiktok_api.py`.
 | **Platforms** | ✅ **Desktop** only — leave Web / Android / iOS unchecked |
 | **App icon** | `assets/icon-1024.png` |
 
-**Description** (112/120):
+**Description** (114/120):
 
 ```
-Desktop app that turns your own YouTube videos into vertical captioned clips and sends them to TikTok as drafts.
+Desktop tool for clippers: turns streams and videos you're licensed to clip into captioned vertical TikTok drafts.
 ```
 
 **Terms of Service URL** / **Privacy Policy URL**: see [§4](#4-terms--privacy-urls).
@@ -58,10 +58,10 @@ Remove everything else (no Share Kit, no Display API, no Research API — unused
 
 ---
 
-## 3. "How each product and scope works" (863/1000)
+## 3. "How each product and scope works" (942/1000)
 
 ```
-ttclips is a local desktop app for creators. It watches YouTube channels the user owns, cuts highlights into vertical 9:16 clips with captions, then sends them to TikTok with the official Content Posting API.
+ttclips is a local desktop app for creators and clippers. It watches YouTube channels the user owns or is licensed to clip (e.g. a creator's paid clipping campaign), cuts highlights into vertical 9:16 clips with captions, then sends them to TikTok with the official Content Posting API.
 
 Login Kit (Desktop): OAuth in the system browser, redirect to http://localhost:<port>/callback/. No website is involved. Tokens are stored locally on the user's machine and refreshed automatically.
 
@@ -136,5 +136,7 @@ the client secret or the token file contents**.
 5. **Unused products.** Every product you leave attached must be demonstrated —
    remove Share Kit / Display API even if they were added earlier.
 6. **Marketing copy.** "Turns YouTube into TikTok content" reads like a scraper.
-   Keep the description on *your own* videos (as above) and point at
-   `docs/LEGAL.md` if asked.
+   Say what it is — a clipping tool for content you own or are licensed to clip
+   (creator clipping campaigns) — and point at `docs/LEGAL.md` / `terms.html`
+   if asked. Demo with a creator whose campaign you are actually in, or your own
+   channel.
