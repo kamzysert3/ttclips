@@ -98,6 +98,7 @@ Constraints:
 - Each highlight must be between 20 and 70 seconds long.
 - Start/end values MUST come from actual transcript timestamps.
 - Highlights must not overlap with each other.
+- If the entire transcript is between 20s and 70s, treat the entire transcript as a single highlight.
 - Return ONLY valid JSON matching this schema:
 {"highlights": [{"start": <float>, "end": <float>, "score": <int 0-100>,
  "hook": "<one catchy opening sentence>", "title": "<short TikTok caption>",
@@ -183,6 +184,7 @@ def rank_highlights(segments: list[dict], num_clips: int = 3,
     raw = resp.text or "{}"
     data = json.loads(raw)
     highlights = data.get("highlights", [])
+    log.info("Gemini raw highlights (%d): %s", len(highlights), highlights)  # debug
     # Validate & sanitize
     valid = []
     for h in highlights:

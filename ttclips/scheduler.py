@@ -624,12 +624,15 @@ def run_post_file(video_path: str, caption: str = "", target: str = "") -> bool:
 
 
 def run_url(source: str, *, targets: list[str] | None = None, num_clips: int = 1,
-            dry_run: bool = False, render_only: bool = False) -> bool:
+            dry_run: bool = False, render_only: bool = False, whole: bool = False) -> bool:
     """Clip one specific video instead of the monitored queue (``--url``).
 
     *source* is a YouTube/Twitch/any yt-dlp-supported link, or a local video
-    file. The queue is never touched; per-platform dedup still applies, so
-    re-running the same link only posts highlights that are not up yet.
+    file. With ``whole=True`` the entire video is used as a single clip and
+    Gemini highlight ranking is skipped (transcription/captioning and the rest
+    of the pipeline still run). The queue is never touched; per-platform dedup
+    still applies, so re-running the same link only posts highlights that are
+    not up yet.
     """
     targets = targets or _resolve_targets()
     local = Path(source).expanduser()
@@ -639,6 +642,7 @@ def run_url(source: str, *, targets: list[str] | None = None, num_clips: int = 1
         item = {"url": local.resolve().as_uri(), "video_id": f"local_{stem}_{digest}",
                 "title": local.stem.replace("_", " "), "channel": "local",
                 "local_path": str(local)}
+        item["duration"] = probe_duration(local)
     else:
         if not re.match(r"^https?://", source.strip(), re.I):
             log.error("--url needs an http(s) link or an existing video file: %s", source)
@@ -648,12 +652,18 @@ def run_url(source: str, *, targets: list[str] | None = None, num_clips: int = 1
         except ValueError as e:
             log.error("%s", e)
             return False
-        if item["duration"] > 3 * 3600:
+        if item.get("duration", 0) > 3 * 3600:
             log.warning("This video is %.1f hours long — downloading and transcribing it "
                         "will take a while.", item["duration"] / 3600)
-    item["max_moments"] = min(5, max(1, int(num_clips)))
-    log.info("Clipping %s (%s) — %d clip(s) -> %s", item["title"], item["channel"],
-             item["max_moments"], ", ".join(targets))
+    if whole:
+        item["whole"] = True
+        item["max_moments"] = 1
+        log.info("Clipping %s (%s) — whole video as 1 clip -> %s", item["title"], item["channel"],
+                 ", ".join(targets))
+    else:
+        item["max_moments"] = min(5, max(1, int(num_clips)))
+        log.info("Clipping %s (%s) — %d clip(s) -> %s", item["title"], item["channel"],
+                 item["max_moments"], ", ".join(targets))
     log.info("Reminder: only post content you own or have rights to (docs/LEGAL.md).")
     result = _process_source(item, targets=targets, slot_time="manual", posts=load_posts(),
                              dry_run=dry_run, render_only=render_only, queue_platforms=None)
@@ -691,6 +701,10 @@ def main() -> None:
                              "Twitch (VOD/clip) or any yt-dlp-supported link, or a local video file")
     parser.add_argument("--clips", type=int, default=1, metavar="N",
                         help="With --url: number of highlight clips to cut (1-5, default 1)")
+    parser.add_argument("--whole", action="store_true",
+                        help="With --url: use the entire video as one clip, skipping Gemini "
+                             "highlight ranking (transcription/captioning and the rest of the "
+                             "pipeline still run)")
     parser.add_argument("--review", action="store_true",
                         help="Show each caption before uploading so you can edit it; "
                              "press Enter to upload (needs an interactive terminal)")
@@ -753,7 +767,8 @@ def _run(args) -> None:
 
     if args.url:
         ok = run_url(args.url, targets=_resolve_targets(args.target) if args.target else None,
-                     num_clips=args.clips, dry_run=args.dry_run, render_only=args.no_upload)
+                     num_clips=args.clips, dry_run=args.dry_run, render_only=args.no_upload,
+                     whole=args.whole)
         sys.exit(0 if ok else 1)
 
     if args.monitor:
