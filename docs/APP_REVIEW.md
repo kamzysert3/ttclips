@@ -99,6 +99,19 @@ Fallback if Pages is unavailable: the `github.com/.../blob/main/docs/...`
 links work but have been rejected before as "not an official policy page".
 `docs/LEGAL.md` is neither a ToS nor a privacy policy — do not submit it.
 
+### Web/Desktop URL property
+
+Enter `https://kamzysert3.github.io/ttclips/` (served by `docs/index.md`).
+
+Verification token is already in the build: `docs/_includes/head-custom.html`
+holds the `tiktok-developers-site-verification` meta tag, which
+`jekyll-theme-minimal` injects into every page's `<head>`. After Pages builds,
+open the URL and view source to confirm the tag is present, then click
+**Verify** in the portal. Leave the tag in place — TikTok re-checks it.
+
+The redirect URI stays `http://localhost:*/callback/`; do not attach a web
+redirect to this domain.
+
 ---
 
 ## 5. Demo video shot list
