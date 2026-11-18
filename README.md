@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kamzysert3/ttclips/main/assets/logo-dark.svg">
+    <img src="https://raw.githubusercontent.com/kamzysert3/ttclips/main/assets/logo.svg" alt="ttclips" width="440">
+  </picture>
+</p>
+
 # ttclips
 
 [![PyPI - Version](https://img.shields.io/pypi/v/ttclips.svg?logo=pypi&logoColor=white)](https://pypi.org/project/ttclips/)
@@ -8,7 +15,7 @@
 
 Turn **your own YouTube channel** into TikTok content automatically. ttclips
 monitors your channel(s), detects the highlight moments, cuts them into vertical
-9:16 clips with dead-center, word-synced karaoke captions, and posts them to
+9:16 clips with face-aware framing and punchy word-synced captions, and posts them to
 TikTok **and/or YouTube Shorts** on a schedule — no TikTok API approval, no
 Google Cloud project, no manual editing, fully local.
 
@@ -18,8 +25,13 @@ creators, not a content scraper (see
 
 - **Fully local and free** — no clip-hosting service, no paid APIs required.
 - **AI-ranked highlights** — whisper transcription + Gemini highlight ranking.
-- **Word-synced captions** — the active word is bold/highlighted in real time.
+- **Smart framing** — follows the speaker's face, or stacks facecam over
+  gameplay, instead of a blind centre crop.
+- **Short-form captions** — bold 2–3 word phrases in the platform-safe zone;
+  the spoken word pops in colour, plus a hook card on the opening seconds.
 - **Cookie-based auth** — no TikTok developer approval / API key needed.
+- **Official APIs when you want them** — optional TikTok Content Posting API
+  and YouTube Data API v3 backends: no cookies, no brittle UI automation.
 - **Two independent targets** — TikTok and YouTube Shorts, each with its own
   schedule tracking and dedup state; post to one, the other, or both.
 - **Self-healing** — model fallback chains, cached downloads, graceful b-roll fallback.
@@ -58,9 +70,9 @@ creators, not a content scraper (see
   match your keyword filters.
 - **Highlight detection** — `faster-whisper` transcribes the audio; Gemini
   ranks the strongest 20–70 second moments with hooks, captions and hashtags.
-- **Vertical clip production** — FFmpeg crops to 1080×1920 (9:16) and burns in
-  big, centered, word-synced captions that highlight each spoken word as it
-  happens.
+- **Vertical clip production** — each clip is reframed to 1080×1920 (9:16)
+  with face-aware framing, captioned, loudness-normalised and trimmed onto
+  word boundaries. See [Clip look](#clip-look).
 - **Original content mode** — Gemini writes a script, `edge-tts` narrates it,
   stock b-roll (Pexels) or an animated gradient backs the clip.
 - **Scheduled posting** — up to 8 posts/day at configurable times, with
@@ -193,7 +205,7 @@ YouTube RSS feeds ─────────────────▶ monitor
                                      ▼
                           Gemini (probe → fallback chain) highlight ranking
                                      ▼
-                          FFmpeg (crop 9:16 + centered karaoke captions)
+                          face-aware 9:16 framing + animated captions (FFmpeg)
                                      ▼
    two pipelines:    repost clips            OR        generated original clips
               Gemini highlights        Gemini script → edge-tts narration →
@@ -238,6 +250,11 @@ Default posting schedule (`config/posting_window.json`):
 | `ttclips --no-upload` | Render the real 9:16 MP4 but don't post |
 | `ttclips --post-file <path>` | Upload an already-rendered clip, skipping the pipeline |
 | `ttclips --post-file <path> --caption "..."` | ...with a custom caption |
+| `ttclips --url <link>` | Clip one specific video instead of the monitored channels: a YouTube or Twitch (VOD/clip) link, anything yt-dlp supports, or a local video file |
+| `ttclips --url <link> --clips 3` | ...cut the top 3 highlights (1–5) |
+| `ttclips --review` | Before each upload, edit the caption and press Enter to post (works with every posting command) |
+| `ttclips-upload --auth` | TikTok API backend: one-time sign-in |
+| `ttclips-youtube --auth` | YouTube API backend: one-time sign-in |
 | `ttclips --version` | Print the installed version |
 | `ttclips-gemini --probe` | Ping candidate Gemini models and report status |
 | `ttclips-init --home <dir> --yes [--force]` | Scaffold config into a specific directory |
@@ -247,6 +264,46 @@ Default posting schedule (`config/posting_window.json`):
 Posting flags compose: `--dry-run` skips the upload, `--no-upload` renders the
 clip but doesn't post, and `--post-file` uploads an existing clip directly
 (recording it in `data/posted.json` so it is never reposted).
+
+### Clip any video (`--url`)
+
+```bash
+ttclips --url "https://www.youtube.com/watch?v=VIDEO_ID"
+ttclips --url "https://www.twitch.tv/videos/123456789" --clips 3 --target both
+ttclips --url "https://clips.twitch.tv/SomeClipSlug" --no-upload   # render only
+ttclips --url "D:\recordings\podcast-ep12.mp4" --review
+```
+
+The link goes through the normal pipeline (download → transcribe → rank →
+9:16 captions → upload). It is a one-off: the monitored queue isn't touched,
+and posts are recorded with slot `manual`. Duplicate detection still applies,
+so re-running the same link only posts highlights that aren't up yet.
+Playlist and channel links are rejected; pass a single video. Only use links
+to content you own or have rights to (see [`docs/LEGAL.md`](docs/LEGAL.md)).
+
+### Review captions before posting (`--review`)
+
+Add `--review` to any posting command. For each clip and platform, ttclips
+shows the title and hashtags pre-filled, ready to edit in place:
+
+```text
+── Review · TikTok ──────────────────────────────
+Clip  twitchvod_v123_610_640.mp4  (30.0s)
+Title     › This is the best moment ever
+Hashtags  › #funny #fyp #viral
+── Will post ──
+This is the best moment ever
+
+#funny #fyp #viral
+(48/2200 chars)
+[Enter] upload  [e] edit  [p] play clip  [s] skip  [q] quit ›
+```
+
+Press Enter on each field to keep it, then Enter to upload. `p` opens the
+clip in your video player, `s` skips this platform, and `q` stops the run
+without posting anything else. Clearing the hashtags line posts with no
+hashtags. `--review` waits for input, so it refuses to start in a
+non-interactive session such as Task Scheduler.
 
 ## Configuration
 
@@ -323,11 +380,54 @@ a one-off `--target` run never removes a source another platform still owes.
 | `upload_timeout_sec` | Page-load budget |
 | `user_agent` | Keep a recent desktop Chrome UA (stale UAs get reset by TikTok's WAF) |
 | `default_hashtags` | Hashtags appended to every caption |
+| `backend` | `browser` (default — Playwright + cookies) or `api` (official Content Posting API, see below) |
+| `api.api_mode` | `inbox` (default — draft goes to your TikTok inbox) or `direct` (posts immediately) |
+| `api.privacy_level` | Optional override; by default follows `visibility`, falling back to `SELF_ONLY` when the account doesn't allow it |
+| `api.disable_comment` / `disable_duet` / `disable_stitch` | Interaction toggles (your own TikTok settings always win) |
+| `api.chunk_size_mb`, `api.status_timeout_sec`, `api.token_file` | Upload chunking, processing wait, token location |
+
+#### Official API backend (`"backend": "api"`)
+
+Posts through TikTok's [Content Posting API](https://developers.tiktok.com/doc/content-posting-api-get-started)
+instead of a browser: no cookies to re-export, no UI changes to break uploads,
+chunked uploads with automatic retry, and AI-generated clips labelled as such.
+
+1. Create an app at <https://developers.tiktok.com/> and add **Login Kit**
+   (Desktop) and **Content Posting API**. Register the redirect URI
+   `http://localhost:*/callback/` (wildcard port).
+2. Add the keys to `.env`:
+
+   ```ini
+   TIKTOK_CLIENT_KEY=...
+   TIKTOK_CLIENT_SECRET=...
+   ```
+
+3. Set `"backend": "api"` in `config/tiktok.json`, then run once:
+
+   ```bash
+   ttclips-upload --auth                # browser consent; token saved + auto-refreshed
+   ttclips --validate-session           # confirms the token works
+   ```
+
+**Which mode?**
+
+| | `inbox` (default) | `direct` |
+|---|---|---|
+| What happens | Draft lands in your TikTok inbox; you tap **Post** in the app | Published immediately |
+| Needs TikTok's app audit | No | Yes, for anything but private posts |
+| Before the audit | Works normally | Account must be **private**; posts are `SELF_ONLY` |
+
+Inbox mode keeps ttclips' scheduling, clipping and captioning fully automatic
+and leaves the final tap to you. TikTok's audit expects a person to approve
+each direct post, so `inbox` is the realistic choice for most creators.
 
 ### YouTube Shorts settings (`config/youtube.json`)
 
 | Key | Description |
 |-----|-------------|
+| `backend` | `studio` (default — Playwright + cookies) or `api` (official YouTube Data API v3, see below) |
+| `client_secrets_file` | API backend: OAuth *Desktop app* client JSON (`config/client_secret.json`) |
+| `token_file` | API backend: where the refresh token is saved (`data/youtube_token.json`) |
 | `headless` | Keep `false` — Studio's upload dialog is flaky headless |
 | `channel_id` | Optional `UC…` channel id; skips the "CREATE → Upload videos" clicks |
 | `cookies_file` | Path to the exported Google cookies (`data/youtube_cookies.txt`) |
@@ -349,6 +449,28 @@ When Studio changes its layout, run `ttclips-youtube --probe` — it writes
 `data/cache/probe/{dom.html,elements.json,screen.png}` so the new selectors can
 be picked without reading the code.
 
+#### Official API backend (`"backend": "api"`)
+
+Uploads through the YouTube Data API v3 instead of driving the Studio UI: no
+cookies to re-export, no selectors that break when Studio changes, and
+resumable uploads with automatic retry on 429/5xx errors.
+
+1. `pip install "ttclips[api]"`
+2. In [Google Cloud Console](https://console.cloud.google.com/), create a
+   project, enable **YouTube Data API v3**, and create an OAuth client of type
+   **Desktop app**. Save its JSON as `config/client_secret.json`.
+3. Set `"backend": "api"` in `config/youtube.json`, then run once:
+
+   ```bash
+   ttclips-youtube --auth      # opens a browser for consent, saves the token
+   ttclips --validate-youtube  # confirms the token and prints your channel
+   ```
+
+> **Audit caveat:** until your Cloud project passes YouTube's
+> [API compliance audit](https://support.google.com/youtube/contact/yt_api_form),
+> every video it uploads is locked to **private**. ttclips logs a warning when
+> this happens. Use the `studio` backend until the audit is approved.
+
 ### Environment variables (`.env`)
 
 | Variable | Default | Purpose |
@@ -367,13 +489,48 @@ be picked without reading the code.
 | `FFMPEG_BIN` / `FFPROBE_BIN` | — | Optional explicit binary paths |
 | `COOKIES_FILE` | `data/cookies.txt` | TikTok session cookies (Netscape format) |
 | `YOUTUBE_COOKIES_FILE` | `data/youtube_cookies.txt` | Google session cookies (Netscape format) |
-| `CAPTION_FONT_SIZE` | `96` | Caption size (pt) |
-| `CAPTION_ALIGNMENT` | `5` | ASS alignment (`5` = middle-center) |
-| `CAPTION_MARGINV` | `0` | Vertical margin |
-| `CAPTION_OUTLINE` / `CAPTION_SHADOW` | `3` / `2` | Outline/shadow width |
-| `CAPTION_WORDS_PER_LINE` | `6` | Max words per caption line |
-| `HIGHLIGHT_COLOUR` | `0000FFFF` | Active-word colour (ASS BGR, default yellow) |
-| `IDLE_COLOUR` | `00808080` | Rest-of-line colour (ASS BGR, light grey) |
+| `CLIP_LAYOUT` | `auto` | Framing: `auto`/`track`/`stack`/`blur`/`crop` — see [Clip look](#clip-look) |
+| `CLIP_FALLBACK_LAYOUT` | `crop` | What `auto` uses when no face is found (`crop`/`blur`) |
+| `STACK_SPLIT` | `0.36` | Share of the height given to the facecam in `stack` |
+| `CAPTION_STYLE` | `pop` | Caption preset: `pop`/`word`/`clean` |
+| `CAPTION_FONT` | `Montserrat Black` | Bundled font, or any font installed on the PC |
+| `CAPTION_FONT_SIZE` | `92` | Caption size |
+| `CAPTION_MAX_WORDS` | `3` | Words per caption phrase |
+| `CAPTION_MAX_LINE_CHARS` | `13` | Characters per line before wrapping/shrinking |
+| `CAPTION_Y` | `0.68` | Caption centre, `0` = top … `1` = bottom |
+| `CAPTION_UPPERCASE` / `CAPTION_HIGHLIGHT` | `1` / `1` | Uppercase text / colour the spoken word |
+| `CAPTION_WORD_POP` | `110` | % size of the spoken word (`100` = off) |
+| `CAPTION_COLOUR` / `HIGHLIGHT_COLOUR` / `CAPTION_OUTLINE_COLOUR` | `#FFFFFF` / `#FFE600` / `#000000` | Colours (`#RRGGBB`) |
+| `CAPTION_OUTLINE` / `CAPTION_SHADOW` | `7` / `3` | Outline/shadow width |
+| `HOOK_SECONDS` / `HOOK_Y` | `3.0` / `0.15` | Hook card duration (`0` = off) and position |
+| `SNAP_TO_WORDS` | `1` | Trim clip bounds onto word boundaries |
+| `AUDIO_NORMALIZE` | `1` | Loudness-normalise audio to −14 LUFS |
+| `VIDEO_CRF` / `VIDEO_PRESET` / `VIDEO_MAX_FPS` | `18` / `veryfast` / `60` | x264 quality, speed, frame-rate cap |
+
+### Clip look
+
+**Framing.** Landscape sources are analysed before they are cut (`ttclips/framing.py`). With `CLIP_LAYOUT=auto` each clip gets one of:
+
+| Layout | When `auto` picks it | Result |
+|---|---|---|
+| `track` | A face is on screen most of the time | 9:16 crop that follows the speaker — held still while they barely move, snapped (not slid) across scene cuts |
+| `stack` | A small face parked in a corner (facecam over gameplay) | Facecam on top, gameplay underneath, captions on the seam |
+| `crop` / `blur` | No steady face (`CLIP_FALLBACK_LAYOUT`) | Centre crop, or the whole picture over a blurred copy |
+
+Set `CLIP_LAYOUT` to one of those names to force it for every clip. Sources
+that are already vertical are left alone. Face detection uses OpenCV with a
+bundled YuNet model; if OpenCV is missing, clips fall back to the centre crop.
+
+**Captions.** Words are grouped into short phrases that break on pauses and
+punctuation, set in the bundled Montserrat Black, and placed at 68% of the
+frame height — below faces, above the platform's caption/button chrome. The
+spoken word is coloured and pops; phrases hold through small gaps and clear
+during real pauses. The clip title is shown as a hook card for the first
+seconds. Pick a preset with `CAPTION_STYLE` (`pop`, `word`, `clean`) and
+override any detail with the variables above.
+
+Preview the look without posting: `ttclips --no-upload` (or
+`ttclips --url <video> --no-upload`).
 
 ## State and data
 
@@ -473,7 +630,7 @@ cookies when the session expires (`ttclips --validate-youtube`).
 <details>
 <summary><b>Why does it need ffmpeg?</b></summary>
 
-ffmpeg merges YouTube video+audio streams, crops to 9:16, and burns in the
+ffmpeg merges YouTube video+audio streams, reframes to 9:16, and burns in the
 captions. `ffmpeg` plus `ffprobe` must resolve on `PATH` (or via
 `FFMPEG_BIN`/`FFPROBE_BIN`).
 </details>
@@ -513,9 +670,18 @@ One-command setup on Windows: `powershell -ExecutionPolicy Bypass -File scripts\
 (creates the venv, installs the package, Playwright, ffmpeg via winget, and
 `.env` from the example).
 
-There is no formal test suite yet; run `python -m ttclips --version` and a
-`ttclips --once --dry-run` to smoke-test a local checkout. Three offline
-checks ship with the repo and need no network, no cookies and no API keys:
+Run the test suite (offline, no cookies or API keys; CI runs it on Windows
+and Linux for Python 3.10 and 3.12):
+
+```bash
+pip install -e ".[dev,api]"
+python -m pytest
+```
+
+It covers state durability (atomic writes, cross-process locking,
+corrupt-file quarantine), per-platform dedup and slot fairness, target
+resolution, scaffolding, YouTube metadata, and the Data API backend with a
+stubbed service. Three end-to-end simulations also ship with the repo:
 
 ```bash
 .\.venv\Scripts\python.exe scripts\check_targets.py       # platform-aware state + metadata

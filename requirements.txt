@@ -7,3 +7,6 @@ edge-tts>=6.1.10
 tiktok-uploader>=1.2.0
 playwright>=1.58.0
 httpx>=0.27
+prompt_toolkit>=3.0.36
+opencv-python-headless>=4.8
+numpy>=1.24

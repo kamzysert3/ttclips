@@ -1,4 +1,8 @@
-"""yt-dlp wrapper: download YouTube videos and extract metadata."""
+"""yt-dlp wrapper: download source videos and extract metadata.
+
+Any site yt-dlp supports works (YouTube, Twitch VODs/clips, Vimeo, direct
+video links, ...); YouTube is just the one the channel monitor polls.
+"""
 from __future__ import annotations
 
 import logging
@@ -20,7 +24,7 @@ def _video_id_from_url(url: str) -> str | None:
     return m.group(1) if m else None
 
 
-def download(url: str, *, filename_hint: str = "") -> Path:
+def download(url: str, *, filename_hint: str = "", cache_id: str = "") -> Path:
     """Download video to downloads/ and return the path to the MP4 file.
 
     If a previously-merged ``{video_id}.mp4`` already exists it is reused,
@@ -29,14 +33,16 @@ def download(url: str, *, filename_hint: str = "") -> Path:
     Parameters
     ----------
     url : str
-        YouTube watch URL.
+        Video URL (YouTube, Twitch, or anything yt-dlp supports).
     filename_hint : str
         Optional label for logging (e.g. the channel name).
+    cache_id : str
+        yt-dlp id of the video, for cache reuse on non-YouTube URLs.
     """
     out_dir = DOWNLOADS_DIR / filename_hint.replace("/", "_") if filename_hint else DOWNLOADS_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    vid = _video_id_from_url(url)
+    vid = cache_id or _video_id_from_url(url)
     if vid:
         cached = out_dir / f"{vid}.mp4"
         if cached.exists() and cached.stat().st_size > 0:
@@ -75,6 +81,7 @@ def download(url: str, *, filename_hint: str = "") -> Path:
         "retries": 3,
         "fragment_retries": 5,
         "socket_timeout": 30,
+        "noplaylist": True,
     }
 
     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -126,3 +133,46 @@ def get_info(url: str) -> dict | None:
     except Exception as e:
         log.warning("get_info failed for %s: %s", url, e)
         return None
+
+
+def _safe_id(text: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", str(text)).strip("_")[:80] or "video"
+
+
+def probe_source(url: str) -> dict:
+    """Resolve a single-video URL to the metadata the pipeline needs.
+
+    Returns ``{"url", "video_id", "cache_id", "title", "channel", "duration",
+    "extractor"}``. ``video_id`` is prefixed with the site (``twitch_v123``)
+    so ids from different sites can never collide in the cache or clip
+    names. Raises ``ValueError`` for playlists/channels or unsupported links.
+    """
+    try:
+        import yt_dlp
+    except ImportError:
+        raise RuntimeError("yt-dlp is not installed.  pip install yt-dlp")
+    opts = {"quiet": True, "no_warnings": True, "skip_download": True,
+            "noplaylist": True, "extract_flat": "in_playlist"}
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except Exception as e:
+        raise ValueError(f"Could not read {url}: {e}") from e
+    if not info:
+        raise ValueError(f"No video found at {url}")
+    if info.get("_type") in ("playlist", "multi_video") or info.get("entries"):
+        raise ValueError(f"{url} is a playlist/channel - pass a link to a single video")
+    extractor = str(info.get("extractor_key") or info.get("extractor") or "web").lower()
+    raw_id = str(info.get("id") or "")
+    if not raw_id:
+        raise ValueError(f"yt-dlp returned no video id for {url}")
+    site = "yt" if extractor == "youtube" else _safe_id(extractor.split(":")[0])
+    return {
+        "url": info.get("webpage_url") or url,
+        "video_id": raw_id if site == "yt" else f"{site}_{_safe_id(raw_id)}",
+        "cache_id": raw_id,
+        "title": info.get("title") or raw_id,
+        "channel": info.get("uploader") or info.get("channel") or site,
+        "duration": float(info.get("duration") or 0),
+        "extractor": extractor,
+    }

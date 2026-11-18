@@ -1,5 +1,8 @@
 """TikTok uploader: Playwright browser automation with cookie-based auth.
 
+With ``"backend": "api"`` in config/tiktok.json, uploads go through the
+official Content Posting API instead (:mod:`ttclips.tiktok_api`).
+
 Uploads run in a child subprocess (``python -m ttclips.uploader <video>``) so a
 Playwright/thread crash inside one attempt can never poison the scheduler
 process — tiktok_uploader never stops its internal sync_playwright loop, and
@@ -38,6 +41,8 @@ UA = TK_CFG.get(
 RETRY_WAIT_INITIAL = float(TK_CFG.get("retry_wait_initial_sec", 30))
 RETRY_WAIT_BACKOFF = float(TK_CFG.get("retry_wait_backoff", 2.0))
 RETRY_WAIT_MAX = float(TK_CFG.get("retry_wait_max_sec", 300))
+# "browser" (Playwright + cookies, default) or "api" (Content Posting API, see tiktok_api.py)
+BACKEND = str(TK_CFG.get("backend", "browser") or "browser").strip().lower()
 
 # ---------------------------------------------------------------------------
 # Probe scaffolding: reach the upload form, type a hashtag, dump the DOM so we
@@ -342,12 +347,27 @@ def _run_upload_child(video_path: str, caption: str, cookies: str) -> bool:
     return True
 
 
+def publish_clip(video_path: str, caption: str, *, is_aigc: bool = False) -> tuple[bool, str]:
+    """Upload a clip with the configured backend. Returns ``(success, remote_id)``.
+
+    ``is_aigc`` labels AI-generated content (API backend only; the browser
+    backend has no equivalent toggle wired up).
+    """
+    if BACKEND == "api":
+        from ttclips import tiktok_api
+        return tiktok_api.upload_clip(str(video_path), caption, is_aigc=is_aigc)
+    return upload_clip(video_path, caption), ""
+
+
 def upload_clip(video_path: str, caption: str, *, cookies: str = "") -> bool:
     """Upload a single video clip to TikTok.
 
-    Each attempt runs in a fresh subprocess so a Playwright/thread crash in
-    one attempt can never poison the scheduler process. Returns True on success.
+    With the browser backend each attempt runs in a fresh subprocess so a
+    Playwright/thread crash in one attempt can never poison the scheduler
+    process. Returns True on success.
     """
+    if BACKEND == "api" and not cookies:
+        return publish_clip(video_path, caption)[0]
     _validate_cookies()
     cookies_file = cookies or str(COOKIES_FILE)
     video_path = str(video_path)
@@ -485,7 +505,30 @@ def main() -> None:
                         help="mp4 to stage during --probe (default: latest clip in data/clips)")
     parser.add_argument("--probe-accept", action="store_true",
                         help="With --probe, also click the exact-match suggestion and dump the caption DOM after accept")
+    parser.add_argument("--auth", action="store_true",
+                        help="API backend: run the one-time TikTok OAuth consent flow and save the token")
+    parser.add_argument("--validate-session", action="store_true",
+                        help="Check whether the TikTok session (cookies or API token) is alive")
     args = parser.parse_args()
+
+    if args.auth or args.validate_session:
+        if not logging.getLogger().handlers:
+            logging.basicConfig(level=logging.INFO,
+                                format="%(asctime)s  %(levelname)-7s %(name)s  %(message)s")
+    if args.auth:
+        from ttclips import tiktok_api
+        try:
+            tiktok_api.authorize()
+        except tiktok_api.TikTokAPIError as e:
+            log.error("%s", e)
+            sys.exit(1)
+        sys.exit(0 if tiktok_api.validate_session() else 1)
+    if args.validate_session:
+        try:
+            sys.exit(0 if validate_session() else 1)
+        except (FileNotFoundError, ValueError) as e:
+            log.error("%s", e)
+            sys.exit(1)
 
     if args.probe:
         sys.exit(run_probe(args.probe_tag, args.probe_video, args.probe_accept))
@@ -511,12 +554,12 @@ def main() -> None:
     sys.exit(0 if ok else 1)
 
 
-if __name__ == "__main__":
-    main()
-
 
 def validate_session() -> bool:
-    """Check if TikTok session cookies are usable. Returns True if page loads correctly."""
+    """Check the TikTok session (cookies, or the API token with the API backend)."""
+    if BACKEND == "api":
+        from ttclips import tiktok_api
+        return tiktok_api.validate_session()
     _validate_cookies()
     try:
         from playwright.sync_api import sync_playwright
@@ -542,3 +585,7 @@ def validate_session() -> bool:
         browser.close()
         log.info("Session valid: %s (final url: %s)", logged_in, url)
         return logged_in
+
+
+if __name__ == "__main__":
+    main()
