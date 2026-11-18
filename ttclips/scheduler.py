@@ -290,7 +290,9 @@ def _process_source(item: dict, *, targets: list[str], slot_time: str, posts: li
                                   cache_id=item.get("cache_id", ""))
         except Exception as e:
             log.error("Download failed: %s", e)
-            return False
+            # In a queue run, skip to the next source so one unavailable video
+            # (age-gated, private, removed) can't block every repost slot.
+            return None if queue_platforms is not None else False
 
     log.info("Transcribing ...")
     try:

@@ -11,7 +11,7 @@ import shutil
 from pathlib import Path
 
 from ttclips.binutils import ffmpeg_dir
-from ttclips.config import DOWNLOADS_DIR
+from ttclips.config import DOWNLOADS_DIR, YOUTUBE_COOKIES_FILE
 
 log = logging.getLogger(__name__)
 
@@ -83,6 +83,10 @@ def download(url: str, *, filename_hint: str = "", cache_id: str = "") -> Path:
         "socket_timeout": 30,
         "noplaylist": True,
     }
+    # Age-restricted / members-only videos need a signed-in session. Reuse the
+    # YouTube cookies the Shorts uploader already uses, when present.
+    if YOUTUBE_COOKIES_FILE.exists():
+        opts["cookiefile"] = str(YOUTUBE_COOKIES_FILE)
 
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
