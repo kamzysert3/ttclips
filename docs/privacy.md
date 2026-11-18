@@ -29,7 +29,7 @@ This policy belongs to the [Terms of Service](terms.html).
   `data/tiktok_token.json`. They are used to call TikTok's API on your behalf
   and are refreshed automatically.
 - **Your TikTok account identity** — with the `user.info.basic` scope, ttclips
-  retrieves your TikTok username, display name and avatar once per run so it can
+  retrieves your TikTok open ID and display name once per run so it can
   log which account a draft was sent to. This is stored only in your local log
   file (`data/logs/ttclips.log`).
 - **Video and audio** — the source videos you choose, the rendered clips, the
@@ -53,7 +53,7 @@ When you use the official API backend:
   requested (`user.info.basic` and `video.upload`). TikTok returns a token to
   `http://localhost:<port>/callback/` on your machine.
 - **Account lookup:** one request to TikTok's `GET /v2/user/info/` returns your
-  username, display name and avatar.
+  open ID and display name.
 - **Video upload:** the clip you chose to post, its caption and hashtags are
   uploaded to TikTok's Content Posting API in chunks. In inbox mode the result
   is a draft in your own TikTok inbox, which you publish yourself.
