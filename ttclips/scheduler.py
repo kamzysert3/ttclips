@@ -708,9 +708,9 @@ def main() -> None:
     parser.add_argument("--review", action="store_true",
                         help="Show each caption before uploading so you can edit it; "
                              "press Enter to upload (needs an interactive terminal)")
-    parser.add_argument("--streams", action="store_true",
+    parser.add_argument("--streams", type=str, default="", metavar="NAME",
                         help="Discover topic streams (config/streams.json) and queue allowed ones")
-    parser.add_argument("--stream-candidates", action="store_true",
+    parser.add_argument("--stream-candidates", type=str, default="", metavar="NAME",
                         help="List discovered streamers waiting for approval")
     parser.add_argument("--approve-streamer", type=str, default="", metavar="NAME",
                         help="Allow a streamer (you have rights to their content) and queue "
@@ -779,13 +779,13 @@ def _run(args) -> None:
         if not load_streams_config().get("enabled"):
             log.error("Stream discovery is off — set \"enabled\": true in config/streams.json")
             sys.exit(1)
-        result = refresh_streams()
+        result = refresh_streams(args.streams)
         log.info("Streams: %d queued, %d new candidate(s) awaiting approval",
                  len(result["queued"]), result["candidates"])
         sys.exit(0)
 
     if args.stream_candidates:
-        lines = candidates_summary()
+        lines = candidates_summary(args.stream_candidates)
         print("\n".join(lines) if lines else "No stream candidates waiting for approval.")
         sys.exit(0)
 

@@ -326,7 +326,7 @@ def _add_candidates(new: list[dict]) -> int:
     return len(added)
 
 
-def refresh_streams() -> dict:
+def refresh_streams(platform: str) -> dict:
     """Discover stream content for every enabled topic.
 
     Allowlisted streamers go straight into the posting queue (capped by each
@@ -359,6 +359,13 @@ def refresh_streams() -> dict:
     known_candidates = {c.get("video_id") for c in load_candidates()}
     targets = configured_targets()
     review: list[dict] = []
+
+    if platform == "twitch":
+        yt_key = ""
+        log.info("Discovering Twitch clips + VODs for %d topic(s)", len(topics))
+    elif platform == "youtube":
+        twitch = None
+        log.info("Discovering YouTube finished streams for %d topic(s)", len(topics))
 
     for topic in topics:
         cap = int(topic.get("max_queue_per_run", 3))
@@ -415,8 +422,16 @@ def approve_streamer(name: str) -> int:
     return moved
 
 
-def candidates_summary(limit: int = 20) -> list[str]:
+
+def candidates_summary(platform: str, limit: int = 20) -> list[str]:
     """Human-readable lines for ``ttclips --stream-candidates``."""
+    if platform:
+        candidates = [c for c in load_candidates() if c.get("platform") == platform]
+        lines = [f"Stream candidates for platform {platform}:"]
+        for candidate in candidates:
+            lines.append(f"  {candidate.get('streamer', '?'):<24} {candidate.get('views', 0):>9,} views  "
+                         f"{candidate.get('url', '')}")
+        return lines
     by_streamer: dict[str, list[dict]] = {}
     for c in load_candidates():
         by_streamer.setdefault(c.get("streamer") or "?", []).append(c)
